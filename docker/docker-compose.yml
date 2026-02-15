@@ -12,7 +12,8 @@ services:
     volumes:
       - ../config/wireguard:/etc/wireguard
       - ../logs/wireguard:/var/log/wireguard
-      - ./.env:/app/.env
+    env_file:
+      - ./.env
     environment:
       - WG_CLIENTS=${WG_CLIENTS:-5}
     cap_add:
@@ -35,7 +36,8 @@ services:
     volumes:
       - ../config/xray:/usr/local/etc/xray
       - ../logs/xray:/var/log/xray
-      - ./.env:/app/.env
+    env_file:
+      - ./.env
     environment:
       - XRAY_UUID=${XRAY_UUID}
       - XRAY_PRIVATE_KEY=${XRAY_PRIVATE_KEY}
@@ -47,6 +49,8 @@ services:
     ports:
       - "8388:8388/tcp"
       - "8388:8388/udp"
+    env_file:
+      - ./.env
     environment:
       - SERVER_ADDR=0.0.0.0
       - SERVER_PORT=8388
@@ -56,7 +60,6 @@ services:
       - DNS_ADDRS=8.8.8.8,8.8.4.4
     volumes:
       - ../logs/shadowsocks:/var/log/shadowsocks
-      - ./.env:/app/.env
 
   xui:
     image: mhsanaei/3x-ui:latest
@@ -67,7 +70,8 @@ services:
     volumes:
       - ../config/3x-ui:/app/db/
       - ../config/3x-ui:/app/cert/
-      - ./.env:/app/.env
+    env_file:
+      - ./.env
     environment:
       - XUI_LOG_LEVEL=info
       - XUI_HTTP_PORT=2053
@@ -84,6 +88,8 @@ services:
     volumes:
       - ../config/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
       - ../data/prometheus:/prometheus
+    env_file:
+      - ./.env
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -99,7 +105,9 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./data/grafana:/var/lib/grafana
+      - ../data/grafana:/var/lib/grafana
+    env_file:
+      - ./.env
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
     depends_on:
