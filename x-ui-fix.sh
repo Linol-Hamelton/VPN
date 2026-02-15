@@ -129,7 +129,8 @@ sqlite3 "$DB" "SELECT ${KEY_COL},${VAL_COL} FROM ${SETTINGS_TABLE} WHERE ${KEY_C
 
 echo ""
 echo "All settings that look like ports (for debugging):"
-sqlite3 "$DB" "SELECT ${KEY_COL},${VAL_COL} FROM ${SETTINGS_TABLE} WHERE lower(${KEY_COL}) LIKE '%port%' ORDER BY ${KEY_COL};" || true
+PORT_KEYS="$(sqlite3 "$DB" "SELECT ${KEY_COL},${VAL_COL} FROM ${SETTINGS_TABLE} WHERE lower(${KEY_COL}) LIKE '%port%' ORDER BY ${KEY_COL};" || true)"
+echo "${PORT_KEYS}"
 
 SERVICE=""
 if systemctl list-unit-files | awk '{print $1}' | grep -qx "x-ui.service"; then
@@ -143,6 +144,18 @@ if [[ -n "$SERVICE" ]]; then
   systemctl --no-pager --full status "$SERVICE" || true
 else
   echo "Could not detect x-ui service unit name. Try: systemctl restart x-ui" >&2
+fi
+
+# If DB has no port-related keys (common on some forks), try the official CLI setter.
+if [[ -z "${PORT_KEYS//[[:space:]]/}" ]]; then
+  if [[ -x /usr/local/x-ui/x-ui ]]; then
+    echo ""
+    echo "No '*port*' keys found in DB; trying: /usr/local/x-ui/x-ui setting -port ${PORT}"
+    /usr/local/x-ui/x-ui setting -port "${PORT}" || true
+    if [[ -n "$SERVICE" ]]; then
+      systemctl restart "$SERVICE"
+    fi
+  fi
 fi
 
 echo ""
