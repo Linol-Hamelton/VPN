@@ -51,6 +51,21 @@ services:
     volumes:
       - ./logs/shadowsocks:/var/log/shadowsocks
 
+  xui:
+    image: mhsanaei/3x-ui:latest
+    container_name: vpn-3x-ui
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./config/3x-ui:/app/db/
+      - ./config/3x-ui:/app/cert/
+    environment:
+      - XUI_LOG_LEVEL=info
+      - XUI_HTTP_PORT=2053
+      - XUI_HTTPS_PORT=2054
+      - XUI_ADMIN_USERNAME=${PANEL_USER:-admin}
+      - XUI_ADMIN_PASSWORD=${PANEL_PASS:-admin}
+
   monitoring:
     image: prom/prometheus:latest
     container_name: vpn-monitoring
