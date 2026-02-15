@@ -19,6 +19,9 @@ Example (run on the server):
 sudo bash ./scripts/x-ui/create-ios-user.sh --email "user1" --server "144.31.227.53" --inbound-port 32062 --out ./client-pack-ios-user1.txt
 ```
 
+Tip: if the script can't generate a `vless://` link automatically, export any working `vless://...` link from x-ui (Share)
+and re-run with `--template-vless-link "<paste vless://...>"` (it reuses `pbk/sni/sid`).
+
 ## Scripts
 
 - `scripts/clients/onboard-ios.ps1`

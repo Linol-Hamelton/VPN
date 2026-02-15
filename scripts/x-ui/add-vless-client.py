@@ -22,6 +22,7 @@ import sys
 import uuid as uuidlib
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import parse_qs, urlparse
 
 
 def _fail(msg: str, code: int = 2) -> None:
@@ -150,6 +151,67 @@ def _vless_link(
         f"#{frag}"
     )
 
+def _parse_template_vless(link: str) -> Dict[str, Any]:
+    """
+    Parse a vless:// share link and extract fields useful for REALITY.
+
+    We intentionally only use non-secret fields (pbk/sni/sid/fp/type/flow/server/port).
+    """
+    link = (link or "").strip()
+    if not link:
+        return {}
+    u = urlparse(link)
+    if u.scheme.lower() != "vless":
+        _fail("template vless link must start with vless://")
+
+    # netloc: "<uuid>@host:port" (port optional)
+    host = ""
+    port = None
+    if "@" in (u.netloc or ""):
+        _user, _at, hostport = u.netloc.rpartition("@")
+    else:
+        hostport = u.netloc or ""
+    # Split host:port (IPv6 in [] is not expected here, but handle minimally)
+    if hostport.startswith("[") and "]" in hostport:
+        # [IPv6]:port
+        h = hostport.split("]", 1)[0].lstrip("[")
+        rest = hostport.split("]", 1)[1]
+        host = h
+        if rest.startswith(":"):
+            try:
+                port = int(rest[1:])
+            except Exception:
+                port = None
+    else:
+        if ":" in hostport:
+            h, p = hostport.rsplit(":", 1)
+            host = h
+            try:
+                port = int(p)
+            except Exception:
+                port = None
+        else:
+            host = hostport
+
+    q = parse_qs(u.query, keep_blank_values=True)
+    # query values come as lists
+    def q1(key: str) -> str:
+        v = q.get(key)
+        if not v:
+            return ""
+        return str(v[0] or "").strip()
+
+    out: Dict[str, Any] = {}
+    if host:
+        out["server"] = host
+    if port is not None:
+        out["port"] = port
+    for k in ("pbk", "sni", "sid", "fp", "type", "flow", "security"):
+        v = q1(k)
+        if v:
+            out[k] = v
+    return out
+
 
 @dataclass
 class Inbound:
@@ -234,6 +296,11 @@ def main() -> None:
     ap.add_argument("--flow", default="xtls-rprx-vision", help="VLESS flow (default: xtls-rprx-vision)")
 
     # Link output is optional: needs server host and ability to derive pbk.
+    ap.add_argument(
+        "--template-vless-link",
+        default=None,
+        help="Optional vless:// link exported from x-ui (used as a template to extract pbk/sni/sid/fp/type).",
+    )
     ap.add_argument("--server", default=None, help="Public host/IP for vless:// link (optional)")
     ap.add_argument("--label", default=None, help="Link label (default: email)")
     ap.add_argument("--sni", default=None, help="Override SNI (default: first reality serverNames)")
@@ -301,7 +368,10 @@ def main() -> None:
 
     # Build link if asked / possible.
     vless = None
-    if args.server:
+    template = _parse_template_vless(args.template_vless_link) if args.template_vless_link else {}
+    server_for_link = (args.server or "").strip() or str(template.get("server") or "").strip()
+
+    if server_for_link:
         reality = None
         # Different forks sometimes nest stream settings differently.
         if isinstance(inbound.stream, dict):
@@ -314,20 +384,25 @@ def main() -> None:
             private_key = str(reality.get("privateKey") or "").strip()
             server_names = reality.get("serverNames")
             short_ids = reality.get("shortIds")
-            sni = args.sni or _pick_first_nonempty(server_names)
-            sid = args.sid or _pick_first_nonempty(short_ids)
+            sni = (args.sni or "").strip() or str(template.get("sni") or "").strip() or _pick_first_nonempty(server_names)
+            sid = (args.sid or "").strip() or str(template.get("sid") or "").strip() or _pick_first_nonempty(short_ids)
+            fp = (args.fp or "").strip() or str(template.get("fp") or "").strip() or "chrome"
+            typ = (args.typ or "").strip() or str(template.get("type") or "").strip() or "tcp"
             if not sni or not sid:
                 out["link_error"] = "Missing reality serverNames/shortIds; can't build vless link."
-            elif not private_key:
-                out["link_error"] = "Missing reality privateKey on server; can't derive pbk."
             else:
-                pbk = (args.pbk or "").strip() or _derive_reality_public_key(private_key)
+                pbk = (args.pbk or "").strip() or str(template.get("pbk") or "").strip()
                 if not pbk:
-                    out["link_error"] = "Can't derive pbk from privateKey (xray helper not found/unsupported). Use x-ui Share to export vless link."
+                    if not private_key:
+                        out["link_error"] = "Missing reality privateKey on server; can't derive pbk (and no pbk/template provided)."
+                    else:
+                        pbk = _derive_reality_public_key(private_key) or ""
+                if not pbk:
+                    out["link_error"] = "Can't derive pbk from privateKey (xray helper not found/unsupported). Provide --pbk or --template-vless-link from x-ui Share."
                 else:
                     label = args.label or args.email
                     vless = _vless_link(
-                        args.server,
+                        server_for_link,
                         int(inbound.port),
                         client_uuid,
                         label,
@@ -335,8 +410,8 @@ def main() -> None:
                         sni,
                         sid,
                         pbk,
-                        args.fp,
-                        args.typ,
+                        fp,
+                        typ,
                     )
                     out["vless_link"] = vless
 

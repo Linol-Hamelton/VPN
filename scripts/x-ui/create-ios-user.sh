@@ -8,6 +8,7 @@ flow="xtls-rprx-vision"
 out_file="./client-pack-ios.txt"
 db="/etc/x-ui/x-ui.db"
 pbk=""
+template_vless_link=""
 
 usage() {
   cat <<'EOF'
@@ -21,6 +22,7 @@ Notes:
   - It will try to build a vless:// link automatically. If pbk derivation fails,
     you'll still get the created UUID and a hint to export the link from x-ui UI.
   - You can pass --pbk "<publicKey>" to avoid pbk derivation (pbk is not secret).
+  - Or pass --template-vless-link "<vless://...>" exported from x-ui Share to reuse pbk/sni/sid (recommended).
 EOF
 }
 
@@ -31,6 +33,7 @@ while [[ $# -gt 0 ]]; do
     --inbound-port) inbound_port="${2:-}"; shift 2 ;;
     --flow) flow="${2:-}"; shift 2 ;;
     --pbk) pbk="${2:-}"; shift 2 ;;
+    --template-vless-link) template_vless_link="${2:-}"; shift 2 ;;
     --db) db="${2:-}"; shift 2 ;;
     --out) out_file="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -74,6 +77,11 @@ if [[ -n "$pbk" ]]; then
   pbk_args=(--pbk "$pbk")
 fi
 
+tmpl_args=()
+if [[ -n "$template_vless_link" ]]; then
+  tmpl_args=(--template-vless-link "$template_vless_link")
+fi
+
 json_out="$(python3 "$repo_root/scripts/x-ui/add-vless-client.py" \
   --db "$db" \
   --inbound-port "$inbound_port" \
@@ -81,6 +89,7 @@ json_out="$(python3 "$repo_root/scripts/x-ui/add-vless-client.py" \
   --flow "$flow" \
   --server "$server_host" \
   "${pbk_args[@]}" \
+  "${tmpl_args[@]}" \
   --json \
 )"
 
