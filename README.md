@@ -24,9 +24,10 @@
    docker-compose up -d
    ```
 
-## iOS (Shadowrocket)
+## iOS
 
-See `IOS_SHADOWROCKET_GUIDE.md` for importing `vless://...` links and connecting from iPhone.
+- Paid option (Shadowrocket): see `IOS_SHADOWROCKET_GUIDE.md`.
+- Free alternatives: see `IOS_FREE_CLIENTS.md`.
 
 ### Ручная установка
 
