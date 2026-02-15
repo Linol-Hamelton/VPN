@@ -13,7 +13,7 @@ services:
       - ../config/wireguard:/etc/wireguard
       - ../logs/wireguard:/var/log/wireguard
     env_file:
-      - ../.env
+      - ./.env
     environment:
       - WG_CLIENTS=5
       - XRAY_UUID=6fd72b94-78aa-46fe-b558-af5faa2ed325
@@ -40,7 +40,7 @@ services:
       - ../config/xray:/usr/local/etc/xray
       - ../logs/xray:/var/log/xray
     env_file:
-      - ../.env
+      - ./.env
     environment:
       - XRAY_UUID=6fd72b94-78aa-46fe-b558-af5faa2ed325
       - XRAY_PRIVATE_KEY=qLF2whw9L09Qm6Kidq9lzcuzfxClirZAOBU8mR_S310
@@ -53,7 +53,7 @@ services:
       - "8388:8388/tcp"
       - "8388:8388/udp"
     env_file:
-      - ../.env
+      - ./.env
     environment:
       - SERVER_ADDR=0.0.0.0
       - SERVER_PORT=8388
@@ -65,7 +65,7 @@ services:
       - ../logs/shadowsocks:/var/log/shadowsocks
 
   xui:
-    image: mhsanaei/3x-ui:latest
+    image: sprov065/x-ui:latest
     container_name: vpn-3x-ui
     restart: unless-stopped
     ports:
@@ -74,7 +74,7 @@ services:
       - ../config/3x-ui:/app/db/
       - ../config/3x-ui:/app/cert/
     env_file:
-      - ../.env
+      - ./.env
     environment:
       - XUI_LOG_LEVEL=info
       - XUI_HTTP_PORT=2053
@@ -96,7 +96,7 @@ services:
       - XRAY_PRIVATE_KEY=qLF2whw9L09Qm6Kidq9lzcuzfxClirZAOBU8mR_S310
       - SHADOWSOCKS_PASSWORD=YourSecurePass123!
     env_file:
-      - ../.env
+      - ./.env
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -114,7 +114,7 @@ services:
     volumes:
       - ../data/grafana:/var/lib/grafana
     env_file:
-      - ../.env
+      - ./.env
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin123
     depends_on:
