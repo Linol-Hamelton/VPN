@@ -29,6 +29,9 @@
 - Paid option (Shadowrocket): see `IOS_SHADOWROCKET_GUIDE.md`.
 - Free alternatives: see `IOS_FREE_CLIENTS.md`.
 
+Client onboarding helpers (generate a small text file to send to a user):
+- `scripts/clients/README.md`
+
 ### Ручная установка
 
 1. **Запустите скрипт установки:**
