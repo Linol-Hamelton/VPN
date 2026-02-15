@@ -58,6 +58,10 @@ def _table_exists(cur: sqlite3.Cursor, name: str) -> bool:
 def _cols(cur: sqlite3.Cursor, table: str) -> List[str]:
     return [r[1] for r in cur.execute(f"PRAGMA table_info({table})")]
 
+def _table_info(cur: sqlite3.Cursor, table: str) -> List[Tuple[int, str, str, int, Optional[str], int]]:
+    # (cid, name, type, notnull, dflt_value, pk)
+    return list(cur.execute(f"PRAGMA table_info({table})"))
+
 
 def _pick_col(cols: List[str], candidates: List[str]) -> Optional[str]:
     for c in candidates:
@@ -121,6 +125,103 @@ def _pick_first_nonempty(items: Any) -> Optional[str]:
         if isinstance(x, str) and x.strip():
             return x.strip()
     return None
+
+
+def _ensure_client_traffic_row(
+    cur: sqlite3.Cursor,
+    *,
+    inbound_id: int,
+    email: str,
+    client_uuid: str,
+) -> Tuple[bool, str]:
+    """
+    Some x-ui/3x-ui forks display clients based on a traffic/stats table, not only inbound.settings.
+    This tries to insert a minimal row into a known traffic table, if present.
+
+    Returns (changed, message).
+    """
+    # Common table names across forks.
+    candidates = ["client_traffics", "client_traffic", "clientStats", "client_stats"]
+    table = next((t for t in candidates if _table_exists(cur, t)), None)
+    if not table:
+        return False, "no client traffic table"
+
+    info = _table_info(cur, table)
+    cols = [c[1] for c in info]
+    col_lut = {c.lower(): c for c in cols}
+
+    email_col = None
+    for k in ("email", "user", "username"):
+        if k in col_lut:
+            email_col = col_lut[k]
+            break
+
+    inbound_col = None
+    for k in ("inbound_id", "inboundid", "inbound"):
+        if k in col_lut:
+            inbound_col = col_lut[k]
+            break
+
+    if not email_col or not inbound_col:
+        return False, f"traffic table '{table}' missing inbound/email columns"
+
+    # If already exists, nothing to do.
+    row = cur.execute(
+        f"SELECT 1 FROM {table} WHERE {email_col}=? AND {inbound_col}=? LIMIT 1",
+        (email, inbound_id),
+    ).fetchone()
+    if row:
+        return False, "traffic row already exists"
+
+    # Build insert payload: set known keys; satisfy NOT NULL cols without defaults.
+    payload: Dict[str, Any] = {email_col: email, inbound_col: inbound_id}
+
+    # Optional columns we can fill if present.
+    for key in ("enable", "enabled", "active"):
+        if key in col_lut:
+            payload[col_lut[key]] = 1
+            break
+
+    for key in ("up", "uplink", "upload"):
+        if key in col_lut:
+            payload[col_lut[key]] = 0
+            break
+    for key in ("down", "downlink", "download"):
+        if key in col_lut:
+            payload[col_lut[key]] = 0
+            break
+    for key in ("total",):
+        if key in col_lut:
+            payload[col_lut[key]] = 0
+            break
+    for key in ("reset", "reset_time", "resettime"):
+        if key in col_lut:
+            payload[col_lut[key]] = 0
+            break
+
+    # If there is a UUID/client-id column, set it.
+    for key in ("uuid", "client_id", "clientid", "xray_uuid", "xrayuuid"):
+        if key in col_lut:
+            payload[col_lut[key]] = client_uuid
+            break
+
+    # Satisfy remaining NOT NULL columns without defaults (skip PK).
+    for _cid, name, typ, notnull, dflt_value, pk in info:
+        if pk == 1:
+            continue
+        if name in payload:
+            continue
+        if notnull == 1 and dflt_value is None:
+            t = (typ or "").upper()
+            if "INT" in t or "REAL" in t or "NUM" in t:
+                payload[name] = 0
+            else:
+                payload[name] = ""
+
+    cols_sql = ",".join(payload.keys())
+    qs = ",".join(["?"] * len(payload))
+    cur.execute(f"INSERT INTO {table} ({cols_sql}) VALUES ({qs})", tuple(payload.values()))
+    return True, f"inserted traffic row into {table}"
 
 
 def _vless_link(
@@ -356,6 +457,17 @@ def main() -> None:
         f"UPDATE inbounds SET {settings_col}=? WHERE id=?",
         (_dump_json(inbound.settings), inbound.id),
     )
+
+    traffic_changed = False
+    traffic_msg = ""
+    try:
+        traffic_changed, traffic_msg = _ensure_client_traffic_row(
+            cur, inbound_id=inbound.id, email=args.email, client_uuid=client_uuid
+        )
+    except Exception as e:
+        # Non-fatal: UI visibility may vary by fork/schema.
+        traffic_changed, traffic_msg = False, f"traffic row insert failed: {e}"
+
     con.commit()
 
     out: Dict[str, Any] = {
@@ -364,6 +476,7 @@ def main() -> None:
         "id": client_uuid,
         "flow": args.flow,
         "inbound": {"id": inbound.id, "port": inbound.port, "tag": inbound.tag},
+        "traffic_row": {"changed": traffic_changed, "message": traffic_msg},
     }
 
     # Build link if asked / possible.
