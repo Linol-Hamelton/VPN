@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  wireguard:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.wireguard
+    container_name: vpn-wireguard
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./config/wireguard:/etc/wireguard
+      - ./logs/wireguard:/var/log/wireguard
+    environment:
+      - WG_CLIENTS=${WG_CLIENTS:-5}
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.forwarding=1
+    depends_on:
+      - xray
+
+  xray:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.xray
+    container_name: vpn-xray
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./config/xray:/usr/local/etc/xray
+      - ./logs/xray:/var/log/xray
+    environment:
+      - XRAY_UUID=${XRAY_UUID}
+      - XRAY_PRIVATE_KEY=${XRAY_PRIVATE_KEY}
+
+  shadowsocks:
+    image: shadowsocks/shadowsocks-libev:latest
+    container_name: vpn-shadowsocks
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - SERVER_ADDR=0.0.0.0
+      - SERVER_PORT=8388
+      - PASSWORD=${SHADOWSOCKS_PASSWORD}
+      - METHOD=chacha20-ietf-poly1305
+      - TIMEOUT=300
+      - DNS_ADDRS=8.8.8.8,8.8.4.4
+    volumes:
+      - ./logs/shadowsocks:/var/log/shadowsocks
+
+  monitoring:
+    image: prom/prometheus:latest
+    container_name: vpn-monitoring
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./data/prometheus:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: vpn-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data/grafana:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+    depends_on:
+      - monitoring
+
+volumes:
+  wireguard_data:
+  xray_data:
+  prometheus_data:
+  grafana_data:
