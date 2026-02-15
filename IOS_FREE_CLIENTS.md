@@ -23,6 +23,8 @@ How to connect:
 1. Import the `vless://...` link (or your subscription URL) into Karing.
 2. Select the profile and connect.
 
+See also: `IOS_KARING_GUIDE.md`.
+
 ## Option 3: Sing-box (VT) (Free)
 
 Sing-box (VT) is a free Sing-box based client. It can be a good fallback if you want something close to upstream Sing-box.
