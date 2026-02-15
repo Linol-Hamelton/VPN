@@ -15,6 +15,10 @@ The safest and simplest flow is always:
 - `scripts/clients/onboard-android.ps1`
 - `scripts/clients/onboard-windows.ps1`
 - `scripts/clients/onboard-macos.ps1`
+- `scripts/clients/onboard-ios.sh`
+- `scripts/clients/onboard-android.sh`
+- `scripts/clients/onboard-windows.sh`
+- `scripts/clients/onboard-macos.sh`
 
 ## Usage (Windows PowerShell)
 
@@ -26,3 +30,12 @@ The safest and simplest flow is always:
 .\scripts\clients\onboard-ios.ps1 -SubscriptionUrl "<paste subscription url>" -OutFile ".\\client-pack-ios.txt"
 ```
 
+## Usage (Linux/macOS bash)
+
+```bash
+chmod +x ./scripts/clients/onboard-ios.sh
+./scripts/clients/onboard-ios.sh --vless-link "<paste vless://...>" --out ./client-pack-ios.txt
+
+# or using a subscription URL
+./scripts/clients/onboard-ios.sh --subscription-url "<paste subscription url>" --out ./client-pack-ios.txt
+```
