@@ -91,6 +91,10 @@ services:
     volumes:
       - ../config/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
       - ../data/prometheus:/prometheus
+    environment:
+      - XRAY_UUID=6fd72b94-78aa-46fe-b558-af5faa2ed325
+      - XRAY_PRIVATE_KEY=qLF2whw9L09Qm6Kidq9lzcuzfxClirZAOBU8mR_S310
+      - SHADOWSOCKS_PASSWORD=YourSecurePass123!
     env_file:
       - ../.env
     command:
