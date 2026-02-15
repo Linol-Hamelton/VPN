@@ -1,5 +1,12 @@
 #!/bin/bash
 
+set -euo pipefail
+
+# You can override these via environment variables:
+#   PANEL_PORT=6098 PANEL_LANG=en-US sudo bash install-vpn-panel.sh
+PANEL_PORT="${PANEL_PORT:-6098}"
+PANEL_LANG="${PANEL_LANG:-en-US}"
+
 # Цвета для вывода
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -18,11 +25,11 @@ fi
 
 # Обновление системы
 echo -e "${YELLOW}[1/8] Обновление системы...${NC}"
-apt update && apt upgrade -y
+DEBIAN_FRONTEND=noninteractive apt update && DEBIAN_FRONTEND=noninteractive apt upgrade -y
 
 # Установка необходимых пакетов
 echo -e "${YELLOW}[2/8] Установка базовых пакетов...${NC}"
-apt install -y curl wget nano ufw fail2ban unattended-upgrades htop
+DEBIAN_FRONTEND=noninteractive apt install -y curl wget nano ufw fail2ban unattended-upgrades htop openssl sqlite3 locales
 
 # Настройка автоматических обновлений безопасности
 echo -e "${YELLOW}[3/8] Настройка автоматических обновлений...${NC}"
@@ -36,7 +43,7 @@ ufw default allow outgoing
 ufw allow 22/tcp comment 'SSH'
 ufw allow 443/tcp comment 'HTTPS/XRay'
 ufw allow 80/tcp comment 'HTTP'
-ufw allow 2053/tcp comment '3X-UI Panel'
+ufw allow "${PANEL_PORT}/tcp" comment '3X-UI Panel'
 ufw --force enable
 
 # Оптимизация сетевых параметров ядра
@@ -94,7 +101,7 @@ systemctl restart fail2ban
 # Генерация учетных данных ДО установки
 PANEL_USER="admin_$(openssl rand -hex 4)"
 PANEL_PASS="$(openssl rand -base64 16)"
-PANEL_PORT=2053
+# PANEL_PORT is set at the top (default 6098) and can be overridden via env.
 
 # Установка 3X-UI с использованием переменных окружения
 echo -e "${YELLOW}[7/8] Установка 3X-UI панели управления...${NC}"
@@ -104,6 +111,27 @@ export PANEL_PASSWORD="${PANEL_PASS}"
 export PANEL_PORT="${PANEL_PORT}"
 
 bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)
+
+# Force English locale on the server (this does not translate x-ui CLI menu).
+sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen || true
+locale-gen en_US.UTF-8 || true
+update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 || true
+
+# Apply panel port + UI language via sqlite (works across most x-ui/3x-ui forks).
+XUI_DB="/etc/x-ui/x-ui.db"
+if [[ -f "$XUI_DB" ]]; then
+  SETTINGS_TABLE="$(sqlite3 "$XUI_DB" "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('setting','settings') ORDER BY (name='settings') DESC LIMIT 1;")"
+  if [[ -n "$SETTINGS_TABLE" ]]; then
+    COLS="$(sqlite3 -separator '|' "$XUI_DB" "PRAGMA table_info(${SETTINGS_TABLE});")"
+    KEY_COL="$(echo "$COLS" | awk -F'|' 'tolower($2)=="key" || tolower($2)=="name" {print $2; exit}')"
+    VAL_COL="$(echo "$COLS" | awk -F'|' 'tolower($2)=="value" || tolower($2)=="val" {print $2; exit}')"
+    if [[ -n "$KEY_COL" && -n "$VAL_COL" ]]; then
+      sqlite3 "$XUI_DB" "UPDATE ${SETTINGS_TABLE} SET ${VAL_COL}='${PANEL_PORT}' WHERE ${KEY_COL} IN ('web.port','webPort','panel.port','panelPort','port');" || true
+      sqlite3 "$XUI_DB" "UPDATE ${SETTINGS_TABLE} SET ${VAL_COL}='${PANEL_LANG}' WHERE ${KEY_COL} IN ('web.lang','web.language','web.locale','language','lang','locale');" || true
+    fi
+  fi
+  systemctl restart x-ui || true
+fi
 
 echo -e "${YELLOW}[8/8] Финальная настройка...${NC}"
 
@@ -116,7 +144,7 @@ echo -e "${GREEN}  ✓ Установка завершена успешно!${NC
 echo -e "${GREEN}================================================${NC}"
 echo ""
 echo -e "${YELLOW}Доступ к панели управления:${NC}"
-echo -e "URL: ${GREEN}http://${SERVER_IP}:2053${NC}"
+echo -e "URL: ${GREEN}http://${SERVER_IP}:${PANEL_PORT}${NC}"
 echo -e "Пользователь: ${GREEN}${PANEL_USER}${NC}"
 echo -e "Пароль: ${GREEN}${PANEL_PASS}${NC}"
 echo ""
@@ -136,7 +164,7 @@ echo -e "${GREEN}================================================${NC}"
 cat > /root/vpn-credentials.txt << EOF
 3X-UI Panel Access:
 ===================
-URL: http://${SERVER_IP}:2053
+URL: http://${SERVER_IP}:${PANEL_PORT}
 Username: ${PANEL_USER}
 Password: ${PANEL_PASS}
 

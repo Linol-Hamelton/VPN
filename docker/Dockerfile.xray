@@ -2,7 +2,7 @@
 FROM alpine:latest
 
 # Install dependencies
-RUN apk add --no-cache curl jq
+RUN apk add --no-cache curl jq unzip ca-certificates
 
 # Download and install XRay
 RUN mkdir -p /usr/local/etc/xray /var/log/xray && \
@@ -23,7 +23,7 @@ EXPOSE 443/tcp
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:443 || exit 1
+    CMD test -f /usr/local/etc/xray/config.json && xray -test -config /usr/local/etc/xray/config.json || exit 1
 
 # Start XRay
 CMD ["xray", "-config", "/usr/local/etc/xray/config.json"]

@@ -14,14 +14,6 @@ services:
       - ../logs/wireguard:/var/log/wireguard
     env_file:
       - ./.env
-    environment:
-      - WG_CLIENTS=5
-      - XRAY_UUID=6fd72b94-78aa-46fe-b558-af5faa2ed325
-      - XRAY_PRIVATE_KEY=qLF2whw9L09Qm6Kidq9lzcuzfxClirZAOBU8mR_S310
-      - SHADOWSOCKS_PASSWORD=YourSecurePass123!
-      - PANEL_USER=admin
-      - PANEL_PASS=secure-password
-      - GRAFANA_PASSWORD=admin123
     cap_add:
       - NET_ADMIN
       - SYS_MODULE
@@ -41,9 +33,6 @@ services:
       - ../logs/xray:/var/log/xray
     env_file:
       - ./.env
-    environment:
-      - XRAY_UUID=6fd72b94-78aa-46fe-b558-af5faa2ed325
-      - XRAY_PRIVATE_KEY=qLF2whw9L09Qm6Kidq9lzcuzfxClirZAOBU8mR_S310
 
   shadowsocks:
     image: shadowsocks/shadowsocks-libev:latest
@@ -57,7 +46,7 @@ services:
     environment:
       - SERVER_ADDR=0.0.0.0
       - SERVER_PORT=8388
-      - PASSWORD=YourSecurePass123!
+      - PASSWORD=${SHADOWSOCKS_PASSWORD}
       - METHOD=chacha20-ietf-poly1305
       - TIMEOUT=300
       - DNS_ADDRS=8.8.8.8,8.8.4.4
@@ -74,12 +63,6 @@ services:
     volumes:
       - ../config/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
       - ../data/prometheus:/prometheus
-    environment:
-      - XRAY_UUID=6fd72b94-78aa-46fe-b558-af5faa2ed325
-      - XRAY_PRIVATE_KEY=qLF2whw9L09Qm6Kidq9lzcuzfxClirZAOBU8mR_S310
-      - SHADOWSOCKS_PASSWORD=YourSecurePass123!
-    env_file:
-      - ./.env
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -99,7 +82,7 @@ services:
     env_file:
       - ./.env
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
     depends_on:
       - monitoring
 

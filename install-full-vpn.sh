@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -euo pipefail
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -83,7 +85,7 @@ echo -e "${YELLOW}[3/12] Установка WireGuard...${NC}"
 apt install -y wireguard wireguard-tools
 
 echo -e "${YELLOW}[4/12] Установка Shadowsocks...${NC}"
-apt install -y shadowsocks-libev
+apt install -y shadowsocks-libev simple-obfs
 
 echo -e "${YELLOW}[5/12] Оптимизация ядра...${NC}"
 cat > /etc/sysctl.d/99-vpn-optimization.conf << EOF
@@ -199,8 +201,9 @@ echo -e "${YELLOW}[7/12] Установка XRay...${NC}"
 bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
 
 XRAY_UUID=$(cat /proc/sys/kernel/random/uuid)
-XRAY_PRIVATE_KEY=$(xray x25519)
-XRAY_PUBLIC_KEY=$(echo $XRAY_PRIVATE_KEY | xray x25519 -i stdin -show public)
+XRAY_KEYS="$(xray x25519)"
+XRAY_PRIVATE_KEY="$(echo "$XRAY_KEYS" | grep -E "Private key" | awk '{print $3}')"
+XRAY_PUBLIC_KEY="$(echo "$XRAY_KEYS" | grep -E "Public key" | awk '{print $3}')"
 
 cat > /usr/local/etc/xray/config.json << EOF
 {
@@ -262,6 +265,11 @@ cat > /usr/local/etc/xray/config.json << EOF
 EOF
 
 mkdir -p /var/log/xray
+if ! xray -test -config=/usr/local/etc/xray/config.json; then
+    echo -e "${RED}ОШИБКА: Конфигурация XRay невалидна!${NC}"
+    cat /usr/local/etc/xray/config.json
+    exit 1
+fi
 systemctl enable xray
 systemctl start xray
 
@@ -370,8 +378,9 @@ echo ""
 
 # Network
 echo -e "${YELLOW}Network:${NC}"
-RX=$(cat /sys/class/net/eth0/statistics/rx_bytes)
-TX=$(cat /sys/class/net/eth0/statistics/tx_bytes)
+PRIMARY_INTERFACE=$(ip route | awk '/default/ {print $5; exit}')
+RX=$(cat /sys/class/net/${PRIMARY_INTERFACE}/statistics/rx_bytes 2>/dev/null || echo 0)
+TX=$(cat /sys/class/net/${PRIMARY_INTERFACE}/statistics/tx_bytes 2>/dev/null || echo 0)
 echo -e "  RX: $(numfmt --to=iec-i --suffix=B $RX)"
 echo -e "  TX: $(numfmt --to=iec-i --suffix=B $TX)"
 EOFSTATUS
