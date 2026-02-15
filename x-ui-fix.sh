@@ -78,6 +78,11 @@ echo "DB: $DB"
 echo "Target port: $PORT"
 echo "Target UI language: $LANG_CODE"
 
+CURRENT_LISTEN_PORT="$(ss -tlnp 2>/dev/null | awk '/x-ui/ {print $4}' | awk -F: '{print $NF}' | head -n 1 || true)"
+if [[ -n "$CURRENT_LISTEN_PORT" ]]; then
+  echo "Detected current listen port (from ss): $CURRENT_LISTEN_PORT"
+fi
+
 SETTINGS_TABLE="$(sqlite3 "$DB" "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('setting','settings') ORDER BY (name='settings') DESC LIMIT 1;")"
 if [[ -z "$SETTINGS_TABLE" ]]; then
   echo "Could not find settings table in $DB (expected 'setting' or 'settings')." >&2
@@ -104,6 +109,16 @@ echo ""
 echo "Current settings (filtered):"
 sqlite3 "$DB" "SELECT ${KEY_COL},${VAL_COL} FROM ${SETTINGS_TABLE} WHERE ${KEY_COL} LIKE 'web.%' OR ${KEY_COL} LIKE '%lang%' OR ${KEY_COL} LIKE '%locale%' OR ${KEY_COL} LIKE '%base%path%' ORDER BY ${KEY_COL};" || true
 
+# If we know the current listen port, also update any matching settings that look like ports.
+if [[ -n "${CURRENT_LISTEN_PORT}" ]]; then
+  echo ""
+  echo "Settings with value == current port (filtered by key contains 'port'):"
+  sqlite3 "$DB" "SELECT ${KEY_COL},${VAL_COL} FROM ${SETTINGS_TABLE} WHERE ${VAL_COL}='${CURRENT_LISTEN_PORT}' AND lower(${KEY_COL}) LIKE '%port%' ORDER BY ${KEY_COL};" || true
+
+  # This tends to catch forks that store the panel port under non-standard keys.
+  sqlite3 "$DB" "UPDATE ${SETTINGS_TABLE} SET ${VAL_COL}='${PORT}' WHERE ${VAL_COL}='${CURRENT_LISTEN_PORT}' AND lower(${KEY_COL}) LIKE '%port%';" || true
+fi
+
 # Update common keys. If a key doesn't exist, UPDATE is a no-op.
 sqlite3 "$DB" "UPDATE ${SETTINGS_TABLE} SET ${VAL_COL}='${PORT}' WHERE ${KEY_COL} IN ('web.port','webPort','panel.port','panelPort','port');"
 sqlite3 "$DB" "UPDATE ${SETTINGS_TABLE} SET ${VAL_COL}='${LANG_CODE}' WHERE ${KEY_COL} IN ('web.lang','web.language','web.locale','language','lang','locale');"
@@ -111,6 +126,10 @@ sqlite3 "$DB" "UPDATE ${SETTINGS_TABLE} SET ${VAL_COL}='${LANG_CODE}' WHERE ${KE
 echo ""
 echo "Settings after update (filtered):"
 sqlite3 "$DB" "SELECT ${KEY_COL},${VAL_COL} FROM ${SETTINGS_TABLE} WHERE ${KEY_COL} LIKE 'web.%' OR ${KEY_COL} LIKE '%lang%' OR ${KEY_COL} LIKE '%locale%' OR ${KEY_COL} LIKE '%base%path%' ORDER BY ${KEY_COL};" || true
+
+echo ""
+echo "All settings that look like ports (for debugging):"
+sqlite3 "$DB" "SELECT ${KEY_COL},${VAL_COL} FROM ${SETTINGS_TABLE} WHERE lower(${KEY_COL}) LIKE '%port%' ORDER BY ${KEY_COL};" || true
 
 SERVICE=""
 if systemctl list-unit-files | awk '{print $1}' | grep -qx "x-ui.service"; then
