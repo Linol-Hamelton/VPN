@@ -33,6 +33,9 @@
 Client onboarding helpers (generate a small text file to send to a user):
 - `scripts/clients/README.md`
 
+Telegram onboarding (optional):
+- `scripts/telegram-bot/README.md` (buttons -> auto-create x-ui client; iOS first)
+
 ### Ручная установка
 
 1. **Запустите скрипт установки:**
