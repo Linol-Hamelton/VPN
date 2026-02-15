@@ -12,6 +12,7 @@ The safest and simplest flow is always:
 If you want to automate creating a new x-ui client (user) on the server:
 
 - `scripts/x-ui/create-ios-user.sh` (server-side; edits `/etc/x-ui/x-ui.db` and restarts `x-ui`)
+- `scripts/x-ui/delete-ios-user.sh` (server-side; removes a client by email and its traffic row)
 
 Example (run on the server):
 
