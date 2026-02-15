@@ -11,6 +11,7 @@ This bot implements:
 ## Requirements (server)
 
 - Python 3
+- Ubuntu/Debian: `python3-venv` (otherwise `python -m venv` fails with "ensurepip is not available")
 - x-ui installed and running
 - This repo available on the server (example: `/root/VPN`)
 - Bot must run as root (it uses `systemctl stop/start x-ui` via `create-ios-user.sh`)
@@ -28,6 +29,9 @@ sudo nano /etc/x-ui/template.vless
 3. Install deps:
 
 ```bash
+sudo apt update
+sudo apt install -y python3-venv
+
 python3 -m venv /opt/vpn-onboard-bot/.venv
 /opt/vpn-onboard-bot/.venv/bin/pip install -r /root/VPN/scripts/telegram-bot/requirements.txt
 ```
@@ -57,4 +61,3 @@ If polling fails, ensure there is no webhook set on this token:
 ```bash
 curl -s "https://api.telegram.org/bot$BOT_TOKEN/deleteWebhook" | jq
 ```
-
