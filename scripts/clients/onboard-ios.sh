@@ -39,8 +39,8 @@ mkdir -p "$(dirname "$out_file")" 2>/dev/null || true
   echo "iOS setup (x-ui / XRay, VLESS Reality)"
   echo
   echo "1) Install a free client app (pick one):"
-  echo "- Karing (App Store)"
-  echo "- sing-box VT (App Store)"
+  echo "- Karing (App Store): https://apps.apple.com/app/karing/id6472431552"
+  echo "- sing-box VT (App Store): https://apps.apple.com/app/sing-box-vt/id6673731168"
   echo
   echo "2) Import config:"
   if [[ -n "$sub_url" ]]; then
@@ -65,4 +65,3 @@ mkdir -p "$(dirname "$out_file")" 2>/dev/null || true
 } > "$out_file"
 
 echo "Wrote: $out_file"
-

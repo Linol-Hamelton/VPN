@@ -9,6 +9,16 @@ The safest and simplest flow is always:
 2. Paste/import it into the client app
 3. Enable VPN/TUN (device-wide) mode
 
+If you want to automate creating a new x-ui client (user) on the server:
+
+- `scripts/x-ui/create-ios-user.sh` (server-side; edits `/etc/x-ui/x-ui.db` and restarts `x-ui`)
+
+Example (run on the server):
+
+```bash
+sudo bash ./scripts/x-ui/create-ios-user.sh --email "user1" --server "144.31.227.53" --inbound-port 32062 --out ./client-pack-ios-user1.txt
+```
+
 ## Scripts
 
 - `scripts/clients/onboard-ios.ps1`
