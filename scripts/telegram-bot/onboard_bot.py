@@ -221,26 +221,26 @@ def _read_template_link() -> Tuple[str, Dict[str, str]]:
     return direct, _parse_template_vless(direct)
 
 
-def _load_inbound_client_uuid(*, db_path: str, inbound_port: int, email: str) -> Optional[str]:
+def _load_inbound_client_identity(*, db_path: str, inbound_port: int, email: str) -> Tuple[str, str]:
     con = sqlite3.connect(db_path)
     cur = con.cursor()
     cols = [r[1] for r in cur.execute("PRAGMA table_info(inbounds)")]
     settings_col = "settings" if "settings" in cols else ("setting" if "setting" in cols else "")
     if not settings_col:
-        return None
+        return "", ""
     row = cur.execute(f"SELECT {settings_col} FROM inbounds WHERE port=?", (inbound_port,)).fetchone()
     if not row:
-        return None
+        return "", ""
     try:
         settings = json.loads(row[0] or "{}")
     except Exception:
-        return None
+        return "", ""
     for c in settings.get("clients", []) or []:
         if isinstance(c, dict) and str(c.get("email")) == email:
             cid = str(c.get("id") or "").strip()
-            if cid:
-                return cid
-    return None
+            sub_id = str(c.get("subId") or "").strip()
+            return cid, sub_id
+    return "", ""
 
 
 @dataclass(frozen=True)
@@ -380,16 +380,18 @@ def _format_ios_message(*, email: str, vless_link: str) -> str:
     )
 
 
-def _render_url_template(*, tpl: str, cfg: BotConfig, email: str, client_id: str) -> str:
+def _render_url_template(*, tpl: str, cfg: BotConfig, email: str, client_id: str, sub_id: str) -> str:
     tpl = (tpl or "").strip()
     if not tpl:
         return ""
-    # Supported placeholders: {email}, {uuid}, {client_id}, {server}, {port}
+    # Supported placeholders: {email}, {uuid}, {client_id}, {sub_id}, {subid}, {server}, {port}
     try:
         return tpl.format(
             email=email,
             uuid=client_id,
             client_id=client_id,
+            sub_id=sub_id,
+            subid=sub_id,
             server=cfg.xui_server_host,
             port=str(cfg.xui_inbound_port),
         ).strip()
@@ -398,23 +400,27 @@ def _render_url_template(*, tpl: str, cfg: BotConfig, email: str, client_id: str
         return ""
 
 
-def _render_sub_url(*, cfg: BotConfig, email: str, client_id: str) -> str:
+def _render_sub_url(*, cfg: BotConfig, email: str, client_id: str, sub_id: str) -> str:
     """
     Optional iOS subscription URL template (for Karing deep-link URL param).
     """
-    return _render_url_template(tpl=cfg.xui_sub_url_template, cfg=cfg, email=email, client_id=client_id)
+    return _render_url_template(
+        tpl=cfg.xui_sub_url_template, cfg=cfg, email=email, client_id=client_id, sub_id=sub_id
+    )
 
 
-def _render_clash_sub_url(*, cfg: BotConfig, email: str, client_id: str) -> str:
+def _render_clash_sub_url(*, cfg: BotConfig, email: str, client_id: str, sub_id: str) -> str:
     """
     Optional Windows Clash subscription/config URL template.
     This URL must be HTTP(S) and return a Clash-compatible config/subscription.
     """
-    return _render_url_template(tpl=cfg.xui_clash_sub_url_template, cfg=cfg, email=email, client_id=client_id)
+    return _render_url_template(
+        tpl=cfg.xui_clash_sub_url_template, cfg=cfg, email=email, client_id=client_id, sub_id=sub_id
+    )
 
 
-def _ios_karing_link(*, cfg: BotConfig, email: str, vless_link: str, client_id: str) -> Tuple[str, bool]:
-    sub_url = _render_sub_url(cfg=cfg, email=email, client_id=client_id)
+def _ios_karing_link(*, cfg: BotConfig, email: str, vless_link: str, client_id: str, sub_id: str) -> Tuple[str, bool]:
+    sub_url = _render_sub_url(cfg=cfg, email=email, client_id=client_id, sub_id=sub_id)
     if not sub_url:
         return "", False
     return _karing_install_link(url=sub_url, name=f"VPN-{email}"), True
@@ -427,20 +433,22 @@ def _ios_keyboard(*, karing_link: str) -> Optional[InlineKeyboardMarkup]:
     return InlineKeyboardMarkup([[InlineKeyboardButton("Open Karing (Auto Import)", url=karing_link)]])
 
 
-def _windows_clash_link(*, cfg: BotConfig, email: str, client_id: str) -> Tuple[str, str]:
+def _windows_clash_link(*, cfg: BotConfig, email: str, client_id: str, sub_id: str) -> Tuple[str, str]:
     """
     Returns (clash_deeplink, clash_subscription_url).
     """
-    sub_url = _render_clash_sub_url(cfg=cfg, email=email, client_id=client_id)
+    sub_url = _render_clash_sub_url(cfg=cfg, email=email, client_id=client_id, sub_id=sub_id)
     if not sub_url:
         return "", ""
     return _clash_install_link(url=sub_url), sub_url
 
 
-def _windows_keyboard(*, clash_link: str) -> Optional[InlineKeyboardMarkup]:
-    if not clash_link:
+def _windows_keyboard(*, sub_url: str) -> Optional[InlineKeyboardMarkup]:
+    # Telegram inline buttons do NOT support custom schemes like clash://.
+    # Use a standard HTTP(S) URL button as a safe fallback.
+    if not sub_url:
         return None
-    return InlineKeyboardMarkup([[InlineKeyboardButton("Open Clash Verge Rev (Auto Import)", url=clash_link)]])
+    return InlineKeyboardMarkup([[InlineKeyboardButton("Open Subscription URL", url=sub_url)]])
 
 
 def _windows_message(*, clash_link: str, clash_sub_url: str) -> str:
@@ -471,8 +479,10 @@ def _windows_message(*, clash_link: str, clash_sub_url: str) -> str:
     return "\n".join(lines)
 
 
-def _ios_message(*, cfg: BotConfig, email: str, vless_link: str, client_id: str) -> str:
-    karing, has_sub = _ios_karing_link(cfg=cfg, email=email, vless_link=vless_link, client_id=client_id)
+def _ios_message(*, cfg: BotConfig, email: str, vless_link: str, client_id: str, sub_id: str) -> str:
+    karing, has_sub = _ios_karing_link(
+        cfg=cfg, email=email, vless_link=vless_link, client_id=client_id, sub_id=sub_id
+    )
 
     def inline_code(s: str) -> str:
         # Telegram Markdown (legacy): inline code works reliably and is easy to copy.
@@ -729,8 +739,8 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 [
                     "Approve failed: Windows auto-import is not configured.",
                     "Set XUI_CLASH_SUB_URL_TEMPLATE in bot env (HTTP(S) URL to Clash config/subscription).",
-                    "Example: XUI_CLASH_SUB_URL_TEMPLATE=http://{server}:2096/sub/{email}",
-                    "Placeholders: {email}, {uuid}, {client_id}, {server}, {port}",
+                    "Example: XUI_CLASH_SUB_URL_TEMPLATE=http://{server}:2096/sub/{sub_id}?type=clash",
+                    "Placeholders: {email}, {uuid}, {client_id}, {sub_id}, {subid}, {server}, {port}",
                 ]
             )
         )
@@ -764,18 +774,23 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     vless = ""
     client_id = ""
+    sub_id = ""
     if isinstance(js, dict):
         vless = str(js.get("vless_link") or "").strip()
         client_id = str(js.get("id") or "").strip()
+        sub_id = str(js.get("sub_id") or "").strip()
 
     # If the script didn't return a vless:// link, rebuild it from the template.
     # Prefer the created client UUID from JSON/stdout; fall back to DB lookup as last resort.
     if not vless:
         uuid_to_use = client_id or _extract_uuid("\n".join([out or "", err or ""]))
         if not uuid_to_use:
-            uuid_to_use = _load_inbound_client_uuid(
+            db_uuid, db_sub = _load_inbound_client_identity(
                 db_path=cfg.xui_db, inbound_port=cfg.xui_inbound_port, email=email
-            ) or ""
+            )
+            uuid_to_use = db_uuid or ""
+            if not sub_id:
+                sub_id = db_sub or ""
         if uuid_to_use:
             vless = _clone_template_vless(
                 template_link,
@@ -788,9 +803,15 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     # Windows flow can work with clash subscription URL + client UUID even without vless://.
     if not client_id:
-        client_id = _extract_uuid("\n".join([out or "", err or ""])) or (
-            _load_inbound_client_uuid(db_path=cfg.xui_db, inbound_port=cfg.xui_inbound_port, email=email) or ""
+        client_id = _extract_uuid("\n".join([out or "", err or ""])) or ""
+    if not client_id or not sub_id:
+        db_uuid, db_sub = _load_inbound_client_identity(
+            db_path=cfg.xui_db, inbound_port=cfg.xui_inbound_port, email=email
         )
+        if not client_id:
+            client_id = db_uuid or ""
+        if not sub_id:
+            sub_id = db_sub or ""
 
     if not vless and requested_os != "windows":
         # Include stderr snippet for debugging.
@@ -821,13 +842,17 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await q.edit_message_text(f"Approved: {display} {username} ({user_id}) client={client_id}")
     if chat_id:
         if requested_os == "ios":
-            delivery_text = _ios_message(cfg=cfg, email=email, vless_link=vless, client_id=client_id)
-            delivery_link, _has_sub = _ios_karing_link(cfg=cfg, email=email, vless_link=vless, client_id=client_id)
+            delivery_text = _ios_message(cfg=cfg, email=email, vless_link=vless, client_id=client_id, sub_id=sub_id)
+            delivery_link, _has_sub = _ios_karing_link(
+                cfg=cfg, email=email, vless_link=vless, client_id=client_id, sub_id=sub_id
+            )
             delivery_keyboard = _ios_keyboard(karing_link=delivery_link)
         else:
-            delivery_link, clash_sub_url = _windows_clash_link(cfg=cfg, email=email, client_id=client_id)
+            delivery_link, clash_sub_url = _windows_clash_link(
+                cfg=cfg, email=email, client_id=client_id, sub_id=sub_id
+            )
             delivery_text = _windows_message(clash_link=delivery_link, clash_sub_url=clash_sub_url)
-            delivery_keyboard = _windows_keyboard(clash_link=delivery_link)
+            delivery_keyboard = _windows_keyboard(sub_url=clash_sub_url)
 
         try:
             await context.bot.send_message(

@@ -68,8 +68,9 @@ XUI_SUB_URL_TEMPLATE=
 
 # Optional (required for Windows Clash Verge Rev auto-import):
 # URL must return Clash-compatible config/subscription.
-# Supported placeholders: {email}, {uuid}, {client_id}, {server}, {port}
-# XUI_CLASH_SUB_URL_TEMPLATE=http://{server}:2096/sub/{email}
+# Supported placeholders: {email}, {uuid}, {client_id}, {sub_id}, {subid}, {server}, {port}
+# Recommended for x-ui sub server:
+# XUI_CLASH_SUB_URL_TEMPLATE=http://{server}:2096/sub/{sub_id}?type=clash
 XUI_CLASH_SUB_URL_TEMPLATE=
 ```
 

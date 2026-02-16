@@ -16,6 +16,7 @@ import argparse
 import json
 import os
 import re
+import secrets
 import sqlite3
 import subprocess
 import sys
@@ -125,6 +126,24 @@ def _pick_first_nonempty(items: Any) -> Optional[str]:
         if isinstance(x, str) and x.strip():
             return x.strip()
     return None
+
+
+def _gen_sub_id(existing: List[Dict[str, Any]], length: int = 16) -> str:
+    """
+    Generate a 3x-ui style subscription id (subId), unique within inbound clients list.
+    """
+    alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
+    used = set()
+    for c in existing:
+        if isinstance(c, dict):
+            s = str(c.get("subId") or "").strip()
+            if s:
+                used.add(s)
+    for _ in range(64):
+        sid = "".join(secrets.choice(alphabet) for _ in range(length))
+        if sid not in used:
+            return sid
+    return uuidlib.uuid4().hex[:length]
 
 
 def _ensure_client_traffic_row(
@@ -451,7 +470,21 @@ def main() -> None:
         if isinstance(c, dict) and c.get("id") == client_uuid:
             _fail(f"Client with id '{client_uuid}' already exists in this inbound.")
 
-    clients.append({"id": client_uuid, "email": args.email, "flow": args.flow})
+    sub_id = _gen_sub_id(clients)
+    clients.append(
+        {
+            "id": client_uuid,
+            "email": args.email,
+            "flow": args.flow,
+            "enable": True,
+            "tgId": "",
+            "subId": sub_id,
+            "limitIp": 0,
+            "totalGB": 0,
+            "expiryTime": 0,
+            "reset": 0,
+        }
+    )
 
     cur.execute(
         f"UPDATE inbounds SET {settings_col}=? WHERE id=?",
@@ -474,6 +507,7 @@ def main() -> None:
         "ok": True,
         "email": args.email,
         "id": client_uuid,
+        "sub_id": sub_id,
         "flow": args.flow,
         "inbound": {"id": inbound.id, "port": inbound.port, "tag": inbound.tag},
         "traffic_row": {"changed": traffic_changed, "message": traffic_msg},
