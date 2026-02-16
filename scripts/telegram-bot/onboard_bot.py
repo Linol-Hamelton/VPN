@@ -445,35 +445,35 @@ def _windows_clash_link(*, cfg: BotConfig, email: str, client_id: str, sub_id: s
 
 def _windows_keyboard(*, sub_url: str) -> Optional[InlineKeyboardMarkup]:
     # Telegram inline buttons do NOT support custom schemes like clash://.
-    # Use a standard HTTP(S) URL button as a safe fallback.
+    # Keep a standard HTTP(S) URL button only as a fallback.
     if not sub_url:
         return None
-    return InlineKeyboardMarkup([[InlineKeyboardButton("Open Subscription URL", url=sub_url)]])
+    return InlineKeyboardMarkup([[InlineKeyboardButton("Open in Browser (Fallback)", url=sub_url)]])
 
 
 def _windows_message(*, clash_link: str, clash_sub_url: str) -> str:
-    def inline_code(s: str) -> str:
-        return "`" + (s or "").strip() + "`"
-
     lines = [
-        "Windows (Clash Verge Rev) подключение готово.",
+        "Windows (Clash Verge Rev) setup is ready.",
         "",
-        "1) Установи Clash Verge Rev: https://github.com/clash-verge-rev/clash-verge-rev/releases",
+        "1) Install Clash Verge Rev:",
+        "https://github.com/clash-verge-rev/clash-verge-rev/releases",
         "",
     ]
 
     if clash_link:
         lines += [
-            "2) Авто-импорт (в 1 клик):",
-            inline_code(clash_link),
+            "2) Auto-import (1 click): click this link",
+            clash_link,
             "",
-            "3) Если deep-link не открылся: Clash Verge Rev -> Profiles -> Import -> From URL, вставь:",
-            inline_code(clash_sub_url),
+            "3) If Telegram does not open it, paste the same clash:// link into your browser.",
+            "",
+            "4) Fallback: Clash Verge Rev -> Profiles -> Import -> From URL, paste:",
+            clash_sub_url,
         ]
     else:
         lines += [
-            "2) Авто-импорт не настроен на сервере.",
-            "Обратись к администратору: нужен XUI_CLASH_SUB_URL_TEMPLATE с Clash-подпиской.",
+            "2) Auto-import is not configured on server.",
+            "Ask admin to set XUI_CLASH_SUB_URL_TEMPLATE.",
         ]
 
     return "\n".join(lines)
@@ -854,13 +854,15 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             delivery_text = _windows_message(clash_link=delivery_link, clash_sub_url=clash_sub_url)
             delivery_keyboard = _windows_keyboard(sub_url=clash_sub_url)
 
+        parse_mode = "Markdown" if requested_os == "ios" else None
+
         try:
             await context.bot.send_message(
                 chat_id=chat_id,
                 text=delivery_text,
                 reply_markup=delivery_keyboard,
                 disable_web_page_preview=True,
-                parse_mode="Markdown",
+                parse_mode=parse_mode,
             )
         except Exception as e:
             # Some Telegram clients reject custom schemes in URL buttons.
@@ -869,7 +871,7 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     chat_id=chat_id,
                     text=delivery_text,
                     disable_web_page_preview=True,
-                    parse_mode="Markdown",
+                    parse_mode=parse_mode,
                 )
             except Exception:
                 pass
