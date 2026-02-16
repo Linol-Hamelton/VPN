@@ -1,14 +1,15 @@
-# Telegram Onboarding Bot (iOS first)
+# Telegram Onboarding Bot (iOS + Windows)
 
 This bot implements:
 
 - `/start` -> buttons (Android / iOS / Windows / MacOS)
 - Anyone can request access by choosing a platform.
 - Admin must approve via inline buttons (Approve/Reject).
-- For now only iOS provisioning is implemented:
+- Implemented provisioning:
   - Telegram user id is used as x-ui client `email`
   - bot calls `scripts/x-ui/create-ios-user.sh`
-  - sends back `vless://...` and a Karing deep-link (`karing://install-config?...`)
+  - iOS: sends `vless://...` and optional Karing deep-link (`karing://install-config?...`)
+  - Windows: sends Clash Verge Rev deep-link (`clash://install-config?url=...`) using a configured subscription URL template
 
 ## Requirements (server)
 
@@ -64,6 +65,12 @@ BOT_SEND_CLIENT_PACK=0
 # XUI_SUB_URL_TEMPLATE=http://{server}:2096/sub/{email}
 # XUI_SUB_URL_TEMPLATE=https://sub.example.com/sub/{email}
 XUI_SUB_URL_TEMPLATE=
+
+# Optional (required for Windows Clash Verge Rev auto-import):
+# URL must return Clash-compatible config/subscription.
+# Supported placeholders: {email}, {uuid}, {client_id}, {server}, {port}
+# XUI_CLASH_SUB_URL_TEMPLATE=http://{server}:2096/sub/{email}
+XUI_CLASH_SUB_URL_TEMPLATE=
 ```
 
 5. Run (from repo root):

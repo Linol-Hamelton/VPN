@@ -93,6 +93,12 @@ def _karing_install_link(*, url: str, name: str) -> str:
     return f"karing://install-config?url={quote(url, safe='')}&name={quote(name, safe='')}"
 
 
+def _clash_install_link(*, url: str) -> str:
+    # Clash Verge Rev deep-link (official docs):
+    # clash://install-config?url=<uri_encoded_url>
+    return f"clash://install-config?url={quote(url, safe='')}"
+
+
 def _vless_link(
     *,
     server: str,
@@ -251,6 +257,7 @@ class BotConfig:
     lock_wait_secs: float
     create_timeout_secs: float
     xui_sub_url_template: str
+    xui_clash_sub_url_template: str
     send_client_pack: bool
 
 
@@ -273,6 +280,7 @@ def _load_config() -> BotConfig:
     lock_wait_secs = float(os.getenv("BOT_LOCK_WAIT_SECS", "30").strip() or "30")
     create_timeout_secs = float(os.getenv("BOT_CREATE_TIMEOUT_SECS", "90").strip() or "90")
     sub_url_template = os.getenv("XUI_SUB_URL_TEMPLATE", "").strip()
+    clash_sub_url_template = os.getenv("XUI_CLASH_SUB_URL_TEMPLATE", "").strip()
     send_client_pack = (os.getenv("BOT_SEND_CLIENT_PACK", "0").strip().lower() in ("1", "true", "yes", "y", "on"))
     return BotConfig(
         token=token,
@@ -287,6 +295,7 @@ def _load_config() -> BotConfig:
         lock_wait_secs=lock_wait_secs,
         create_timeout_secs=create_timeout_secs,
         xui_sub_url_template=sub_url_template,
+        xui_clash_sub_url_template=clash_sub_url_template,
         send_client_pack=send_client_pack,
     )
 
@@ -371,16 +380,8 @@ def _format_ios_message(*, email: str, vless_link: str) -> str:
     )
 
 
-def _render_sub_url(*, cfg: BotConfig, email: str, client_id: str) -> str:
-    """
-    Optional subscription URL template to improve iOS auto-import reliability.
-
-    Admin provides XUI_SUB_URL_TEMPLATE, for example:
-    - https://sub.example.com/sub/{email}
-    - http://{server}:2096/sub/{uuid}
-    - https://{server}/sub/{client_id}
-    """
-    tpl = (cfg.xui_sub_url_template or "").strip()
+def _render_url_template(*, tpl: str, cfg: BotConfig, email: str, client_id: str) -> str:
+    tpl = (tpl or "").strip()
     if not tpl:
         return ""
     # Supported placeholders: {email}, {uuid}, {client_id}, {server}, {port}
@@ -393,8 +394,23 @@ def _render_sub_url(*, cfg: BotConfig, email: str, client_id: str) -> str:
             port=str(cfg.xui_inbound_port),
         ).strip()
     except Exception:
-        # Misconfigured template; fall back to vless:// flow.
+        # Misconfigured template.
         return ""
+
+
+def _render_sub_url(*, cfg: BotConfig, email: str, client_id: str) -> str:
+    """
+    Optional iOS subscription URL template (for Karing deep-link URL param).
+    """
+    return _render_url_template(tpl=cfg.xui_sub_url_template, cfg=cfg, email=email, client_id=client_id)
+
+
+def _render_clash_sub_url(*, cfg: BotConfig, email: str, client_id: str) -> str:
+    """
+    Optional Windows Clash subscription/config URL template.
+    This URL must be HTTP(S) and return a Clash-compatible config/subscription.
+    """
+    return _render_url_template(tpl=cfg.xui_clash_sub_url_template, cfg=cfg, email=email, client_id=client_id)
 
 
 def _ios_karing_link(*, cfg: BotConfig, email: str, vless_link: str, client_id: str) -> Tuple[str, bool]:
@@ -409,6 +425,50 @@ def _ios_keyboard(*, karing_link: str) -> Optional[InlineKeyboardMarkup]:
         return None
     # A URL button is the most reliable way to present (and tap) a link in Telegram.
     return InlineKeyboardMarkup([[InlineKeyboardButton("Open Karing (Auto Import)", url=karing_link)]])
+
+
+def _windows_clash_link(*, cfg: BotConfig, email: str, client_id: str) -> Tuple[str, str]:
+    """
+    Returns (clash_deeplink, clash_subscription_url).
+    """
+    sub_url = _render_clash_sub_url(cfg=cfg, email=email, client_id=client_id)
+    if not sub_url:
+        return "", ""
+    return _clash_install_link(url=sub_url), sub_url
+
+
+def _windows_keyboard(*, clash_link: str) -> Optional[InlineKeyboardMarkup]:
+    if not clash_link:
+        return None
+    return InlineKeyboardMarkup([[InlineKeyboardButton("Open Clash Verge Rev (Auto Import)", url=clash_link)]])
+
+
+def _windows_message(*, clash_link: str, clash_sub_url: str) -> str:
+    def inline_code(s: str) -> str:
+        return "`" + (s or "").strip() + "`"
+
+    lines = [
+        "Windows (Clash Verge Rev) подключение готово.",
+        "",
+        "1) Установи Clash Verge Rev: https://github.com/clash-verge-rev/clash-verge-rev/releases",
+        "",
+    ]
+
+    if clash_link:
+        lines += [
+            "2) Авто-импорт (в 1 клик):",
+            inline_code(clash_link),
+            "",
+            "3) Если deep-link не открылся: Clash Verge Rev -> Profiles -> Import -> From URL, вставь:",
+            inline_code(clash_sub_url),
+        ]
+    else:
+        lines += [
+            "2) Авто-импорт не настроен на сервере.",
+            "Обратись к администратору: нужен XUI_CLASH_SUB_URL_TEMPLATE с Clash-подпиской.",
+        ]
+
+    return "\n".join(lines)
 
 
 def _ios_message(*, cfg: BotConfig, email: str, vless_link: str, client_id: str) -> str:
@@ -607,7 +667,7 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if action != "ok":
         return
 
-    if requested_os != "ios":
+    if requested_os not in ("ios", "windows"):
         store.pop(req_id, None)
         _pending_save(cfg.pending_file, store)
         await q.edit_message_text(f"Approved (not implemented): {display} ({user_id}) OS={requested_os}")
@@ -618,14 +678,14 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 pass
         return
 
-    # iOS: create x-ui client (email = telegram user id)
+    # iOS/Windows: create x-ui client (email = telegram user id)
     email = str(user_id)
     out_dir = Path(cfg.output_dir)
-    out_file = out_dir / f"client-pack-ios-{email}.txt"
+    out_file = out_dir / f"client-pack-{requested_os}-{email}.txt"
 
     # Immediately show progress in admin chat so it doesn't look like a "dead" button.
     try:
-        await q.edit_message_text(f"Processing: {display} ({user_id}) OS=ios ...")
+        await q.edit_message_text(f"Processing: {display} ({user_id}) OS={requested_os} ...")
     except Exception:
         pass
 
@@ -657,6 +717,20 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     f"- missing: {', '.join(missing)}",
                     "Fix: export a real `vless://...` from x-ui Share/Export for this inbound.",
                     "It must include query params like `pbk=...&sni=...&sid=...`.",
+                ]
+            )
+        )
+        return
+
+    # Windows auto-import via Clash deep-link requires a Clash subscription/config URL template.
+    if requested_os == "windows" and not (cfg.xui_clash_sub_url_template or "").strip():
+        await q.edit_message_text(
+            "\n".join(
+                [
+                    "Approve failed: Windows auto-import is not configured.",
+                    "Set XUI_CLASH_SUB_URL_TEMPLATE in bot env (HTTP(S) URL to Clash config/subscription).",
+                    "Example: XUI_CLASH_SUB_URL_TEMPLATE=http://{server}:2096/sub/{email}",
+                    "Placeholders: {email}, {uuid}, {client_id}, {server}, {port}",
                 ]
             )
         )
@@ -712,7 +786,13 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             )
             client_id = uuid_to_use
 
-    if not vless:
+    # Windows flow can work with clash subscription URL + client UUID even without vless://.
+    if not client_id:
+        client_id = _extract_uuid("\n".join([out or "", err or ""])) or (
+            _load_inbound_client_uuid(db_path=cfg.xui_db, inbound_port=cfg.xui_inbound_port, email=email) or ""
+        )
+
+    if not vless and requested_os != "windows":
         # Include stderr snippet for debugging.
         snippet = (err or out or "").strip().replace("\r", "")
         snippet = snippet[-700:] if snippet else ""
@@ -724,17 +804,36 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 pass
         return
 
+    if requested_os == "windows" and not client_id:
+        snippet = (err or out or "").strip().replace("\r", "")
+        snippet = snippet[-700:] if snippet else ""
+        await q.edit_message_text(f"Approved but failed: {display} ({user_id}) rc={rc}\n{snippet}")
+        if chat_id:
+            try:
+                await context.bot.send_message(chat_id=chat_id, text="Approved, but failed to generate Windows profile. Contact admin.")
+            except Exception:
+                pass
+        return
+
     store.pop(req_id, None)
     _pending_save(cfg.pending_file, store)
 
     await q.edit_message_text(f"Approved: {display} {username} ({user_id}) client={client_id}")
     if chat_id:
-        karing_link, _has_sub = _ios_karing_link(cfg=cfg, email=email, vless_link=vless, client_id=client_id)
+        if requested_os == "ios":
+            delivery_text = _ios_message(cfg=cfg, email=email, vless_link=vless, client_id=client_id)
+            delivery_link, _has_sub = _ios_karing_link(cfg=cfg, email=email, vless_link=vless, client_id=client_id)
+            delivery_keyboard = _ios_keyboard(karing_link=delivery_link)
+        else:
+            delivery_link, clash_sub_url = _windows_clash_link(cfg=cfg, email=email, client_id=client_id)
+            delivery_text = _windows_message(clash_link=delivery_link, clash_sub_url=clash_sub_url)
+            delivery_keyboard = _windows_keyboard(clash_link=delivery_link)
+
         try:
             await context.bot.send_message(
                 chat_id=chat_id,
-                text=_ios_message(cfg=cfg, email=email, vless_link=vless, client_id=client_id),
-                reply_markup=_ios_keyboard(karing_link=karing_link),
+                text=delivery_text,
+                reply_markup=delivery_keyboard,
                 disable_web_page_preview=True,
                 parse_mode="Markdown",
             )
@@ -743,7 +842,7 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             try:
                 await context.bot.send_message(
                     chat_id=chat_id,
-                    text=_ios_message(cfg=cfg, email=email, vless_link=vless, client_id=client_id),
+                    text=delivery_text,
                     disable_web_page_preview=True,
                     parse_mode="Markdown",
                 )
@@ -756,7 +855,7 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                         [
                             f"Delivery warning: couldn't send user message with URL button ({display} {username} {user_id}).",
                             f"- error: {e}",
-                            f"- karing: {karing_link}",
+                            f"- deeplink: {delivery_link or '-'}",
                         ]
                     ),
                     disable_web_page_preview=True,
