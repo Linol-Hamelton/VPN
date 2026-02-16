@@ -411,9 +411,11 @@ def _ios_keyboard(*, karing_link: str) -> Optional[InlineKeyboardMarkup]:
 def _ios_message(*, cfg: BotConfig, email: str, vless_link: str, client_id: str) -> str:
     karing, has_sub = _ios_karing_link(cfg=cfg, email=email, vless_link=vless_link, client_id=client_id)
 
-    # IMPORTANT:
-    # - No leading spaces: Telegram often stops auto-linking custom schemes (vless://, karing://) when indented.
-    # - Keep the manual path short (copy/paste in the app).
+    def code_block(s: str) -> str:
+        # Telegram Markdown: preformatted block is the most "copy-friendly".
+        return "```\n" + (s or "").strip() + "\n```"
+
+    # Keep it minimal and copy-friendly.
     lines = [
         "iOS (Karing) подключение готово.",
         "",
@@ -421,24 +423,19 @@ def _ios_message(*, cfg: BotConfig, email: str, vless_link: str, client_id: str)
         "",
     ]
 
-    if has_sub:
+    if has_sub and karing:
         lines += [
-            "2) Авто-импорт (лучше всего работает через URL подписки):",
-            karing,
+            "2) Авто-импорт (если поддерживается на устройстве):",
+            code_block(karing),
             "",
         ]
-        # We intentionally do NOT mention extra toggles here.
-        # If a user's device blocks scheme opens, they can still use manual import below.
+        step3 = 3
     else:
-        lines += [
-            "2) Открой Karing -> Add config -> Paste from clipboard и вставь:",
-            vless_link,
-            "",
-        ]
+        step3 = 2
 
     lines += [
-        "Если авто-импорт не сработал: открой Karing -> Add config -> Paste from clipboard и вставь этот vless://",
-        vless_link,
+        f"{step3}) Кликни на ссылку -> открой Karing -> Add config -> Paste from clipboard и вставь:",
+        code_block(vless_link),
     ]
 
     return "\n".join(lines)
@@ -736,6 +733,7 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 text=_ios_message(cfg=cfg, email=email, vless_link=vless, client_id=client_id),
                 reply_markup=_ios_keyboard(karing_link=karing_link),
                 disable_web_page_preview=True,
+                parse_mode="Markdown",
             )
         except Exception as e:
             # Some Telegram clients reject custom schemes in URL buttons.
@@ -744,6 +742,7 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     chat_id=chat_id,
                     text=_ios_message(cfg=cfg, email=email, vless_link=vless, client_id=client_id),
                     disable_web_page_preview=True,
+                    parse_mode="Markdown",
                 )
             except Exception:
                 pass
@@ -762,13 +761,13 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             except Exception:
                 pass
 
-        # Also send the raw vless link as a separate message (no extra text, no indent)
-        # so Telegram is more likely to treat it as a tappable/copyable link.
+        # Also send the raw vless link in a Markdown code block for easier copy.
         try:
             await context.bot.send_message(
                 chat_id=chat_id,
-                text=vless,
+                text="```\n" + vless.strip() + "\n```",
                 disable_web_page_preview=True,
+                parse_mode="Markdown",
             )
         except Exception:
             pass
