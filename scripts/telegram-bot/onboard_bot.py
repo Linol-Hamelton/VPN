@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import html
 import json
 import os
 import re
@@ -452,6 +453,9 @@ def _windows_keyboard(*, sub_url: str) -> Optional[InlineKeyboardMarkup]:
 
 
 def _windows_message(*, clash_link: str, clash_sub_url: str) -> str:
+    def _a(href: str, text: str) -> str:
+        return f'<a href="{html.escape(href, quote=True)}">{html.escape(text)}</a>'
+
     lines = [
         "Windows (Clash Verge Rev) setup is ready.",
         "",
@@ -462,13 +466,14 @@ def _windows_message(*, clash_link: str, clash_sub_url: str) -> str:
 
     if clash_link:
         lines += [
-            "2) Auto-import (1 click): click this link",
-            clash_link,
+            "2) Auto-import (1 click):",
+            _a(clash_link, "Open Clash Verge Auto Import"),
             "",
             "3) If Telegram does not open it, paste the same clash:// link into your browser.",
+            f"<code>{html.escape(clash_link)}</code>",
             "",
             "4) Fallback: Clash Verge Rev -> Profiles -> Import -> From URL, paste:",
-            clash_sub_url,
+            f"<code>{html.escape(clash_sub_url)}</code>",
         ]
     else:
         lines += [
@@ -854,7 +859,7 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             delivery_text = _windows_message(clash_link=delivery_link, clash_sub_url=clash_sub_url)
             delivery_keyboard = _windows_keyboard(sub_url=clash_sub_url)
 
-        parse_mode = "Markdown" if requested_os == "ios" else None
+        parse_mode = "Markdown" if requested_os == "ios" else "HTML"
 
         try:
             await context.bot.send_message(
@@ -871,7 +876,7 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     chat_id=chat_id,
                     text=delivery_text,
                     disable_web_page_preview=True,
-                    parse_mode=parse_mode,
+                    parse_mode=None,
                 )
             except Exception:
                 pass
