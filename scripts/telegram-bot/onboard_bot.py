@@ -925,7 +925,9 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             delivery_link, clash_sub_url, clash_auto_url = _windows_clash_link(
                 cfg=cfg, email=email, client_id=client_id, sub_id=sub_id
             )
-            manual_link = vless or clash_sub_url
+            # Clash Verge manual profile import expects an HTTP(S) subscription URL.
+            # Do not fall back to vless:// here.
+            manual_link = clash_sub_url
             delivery_text = _windows_message(clash_link=delivery_link, vless_link=manual_link)
             delivery_keyboard = _windows_keyboard(auto_url=clash_auto_url, sub_url=clash_sub_url)
 
