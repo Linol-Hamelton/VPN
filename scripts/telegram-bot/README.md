@@ -9,7 +9,7 @@ This bot implements:
   - Telegram user id is used as x-ui client `email`
   - bot calls `scripts/x-ui/create-ios-user.sh`
   - iOS: sends `vless://...` and optional Karing deep-link (`karing://install-config?...`)
-  - Windows: sends Clash Verge Rev deep-link (`clash://install-config?url=...`) using a configured subscription URL template
+- Windows: sends Clash subscription URL and (optionally) a one-click HTTP bridge that opens `clash://install-config?...`
 
 ## Requirements (server)
 
@@ -72,6 +72,16 @@ XUI_SUB_URL_TEMPLATE=
 # Recommended for x-ui sub server:
 # XUI_CLASH_SUB_URL_TEMPLATE=http://{server}:2096/sub/{sub_id}?type=clash
 XUI_CLASH_SUB_URL_TEMPLATE=
+
+# Optional (recommended for true "one click" from Telegram button):
+# Telegram URL buttons do not allow clash:// scheme directly.
+# Use an HTTP bridge URL that redirects to clash://install-config?... .
+# Supported placeholders:
+# {email}, {uuid}, {client_id}, {sub_id}, {subid}, {server}, {port},
+# {sub_url}, {sub_url_enc}, {clash_link}, {clash_link_enc}
+# Example:
+# XUI_CLASH_BRIDGE_URL_TEMPLATE=http://{server}:25501/open?sub={sub_url_enc}
+XUI_CLASH_BRIDGE_URL_TEMPLATE=
 ```
 
 5. Run (from repo root):
@@ -85,4 +95,21 @@ If polling fails, ensure there is no webhook set on this token:
 
 ```bash
 curl -s "https://api.telegram.org/bot$BOT_TOKEN/deleteWebhook" | jq
+```
+
+## Optional: Run Clash Deeplink Bridge (for Windows one-click button)
+
+Install systemd unit and start:
+
+```bash
+sudo install -m 0644 /root/VPN/scripts/telegram-bot/vpn-clash-bridge.service /etc/systemd/system/vpn-clash-bridge.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now vpn-clash-bridge
+sudo systemctl status vpn-clash-bridge --no-pager -l
+```
+
+If UFW is enabled, allow bridge port:
+
+```bash
+sudo ufw allow 25501/tcp
 ```

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import html
 import json
 import os
 import re
@@ -259,6 +258,7 @@ class BotConfig:
     create_timeout_secs: float
     xui_sub_url_template: str
     xui_clash_sub_url_template: str
+    xui_clash_bridge_url_template: str
     send_client_pack: bool
 
 
@@ -282,6 +282,7 @@ def _load_config() -> BotConfig:
     create_timeout_secs = float(os.getenv("BOT_CREATE_TIMEOUT_SECS", "90").strip() or "90")
     sub_url_template = os.getenv("XUI_SUB_URL_TEMPLATE", "").strip()
     clash_sub_url_template = os.getenv("XUI_CLASH_SUB_URL_TEMPLATE", "").strip()
+    clash_bridge_url_template = os.getenv("XUI_CLASH_BRIDGE_URL_TEMPLATE", "").strip()
     send_client_pack = (os.getenv("BOT_SEND_CLIENT_PACK", "0").strip().lower() in ("1", "true", "yes", "y", "on"))
     return BotConfig(
         token=token,
@@ -297,6 +298,7 @@ def _load_config() -> BotConfig:
         create_timeout_secs=create_timeout_secs,
         xui_sub_url_template=sub_url_template,
         xui_clash_sub_url_template=clash_sub_url_template,
+        xui_clash_bridge_url_template=clash_bridge_url_template,
         send_client_pack=send_client_pack,
     )
 
@@ -420,6 +422,40 @@ def _render_clash_sub_url(*, cfg: BotConfig, email: str, client_id: str, sub_id:
     )
 
 
+def _render_clash_bridge_url(
+    *,
+    cfg: BotConfig,
+    email: str,
+    client_id: str,
+    sub_id: str,
+    sub_url: str,
+    clash_link: str,
+) -> str:
+    """
+    Optional HTTP bridge page that immediately opens clash:// link.
+    This is needed because Telegram URL buttons do not support custom schemes.
+    """
+    tpl = (cfg.xui_clash_bridge_url_template or "").strip()
+    if not tpl:
+        return ""
+    try:
+        return tpl.format(
+            email=email,
+            uuid=client_id,
+            client_id=client_id,
+            sub_id=sub_id,
+            subid=sub_id,
+            server=cfg.xui_server_host,
+            port=str(cfg.xui_inbound_port),
+            sub_url=sub_url,
+            sub_url_enc=quote(sub_url, safe=""),
+            clash_link=clash_link,
+            clash_link_enc=quote(clash_link, safe=""),
+        ).strip()
+    except Exception:
+        return ""
+
+
 def _ios_karing_link(*, cfg: BotConfig, email: str, vless_link: str, client_id: str, sub_id: str) -> Tuple[str, bool]:
     sub_url = _render_sub_url(cfg=cfg, email=email, client_id=client_id, sub_id=sub_id)
     if not sub_url:
@@ -434,28 +470,39 @@ def _ios_keyboard(*, karing_link: str) -> Optional[InlineKeyboardMarkup]:
     return InlineKeyboardMarkup([[InlineKeyboardButton("Open Karing (Auto Import)", url=karing_link)]])
 
 
-def _windows_clash_link(*, cfg: BotConfig, email: str, client_id: str, sub_id: str) -> Tuple[str, str]:
+def _windows_clash_link(*, cfg: BotConfig, email: str, client_id: str, sub_id: str) -> Tuple[str, str, str]:
     """
-    Returns (clash_deeplink, clash_subscription_url).
+    Returns (clash_deeplink, clash_subscription_url, clash_auto_import_url).
     """
     sub_url = _render_clash_sub_url(cfg=cfg, email=email, client_id=client_id, sub_id=sub_id)
     if not sub_url:
-        return "", ""
-    return _clash_install_link(url=sub_url), sub_url
+        return "", "", ""
+    clash_link = _clash_install_link(url=sub_url)
+    bridge_url = _render_clash_bridge_url(
+        cfg=cfg,
+        email=email,
+        client_id=client_id,
+        sub_id=sub_id,
+        sub_url=sub_url,
+        clash_link=clash_link,
+    )
+    return clash_link, sub_url, bridge_url
 
 
-def _windows_keyboard(*, sub_url: str) -> Optional[InlineKeyboardMarkup]:
+def _windows_keyboard(*, auto_url: str, sub_url: str) -> Optional[InlineKeyboardMarkup]:
     # Telegram inline buttons do NOT support custom schemes like clash://.
-    # Keep a standard HTTP(S) URL button only as a fallback.
-    if not sub_url:
+    # Use an HTTP bridge for one-click, and keep subscription URL as fallback.
+    rows = []
+    if auto_url:
+        rows.append([InlineKeyboardButton("Open Clash Verge Auto Import", url=auto_url)])
+    if sub_url:
+        rows.append([InlineKeyboardButton("Open Subscription YAML (Fallback)", url=sub_url)])
+    if not rows:
         return None
-    return InlineKeyboardMarkup([[InlineKeyboardButton("Open in Browser (Fallback)", url=sub_url)]])
+    return InlineKeyboardMarkup(rows)
 
 
-def _windows_message(*, clash_link: str, clash_sub_url: str) -> str:
-    def _a(href: str, text: str) -> str:
-        return f'<a href="{html.escape(href, quote=True)}">{html.escape(text)}</a>'
-
+def _windows_message(*, clash_link: str, clash_sub_url: str, has_auto_button: bool) -> str:
     lines = [
         "Windows (Clash Verge Rev) setup is ready.",
         "",
@@ -466,15 +513,17 @@ def _windows_message(*, clash_link: str, clash_sub_url: str) -> str:
 
     if clash_link:
         lines += [
-            "2) Auto-import (1 click):",
-            _a(clash_link, "Open Clash Verge Auto Import"),
+            "2) Auto-import (1 click): tap button `Open Clash Verge Auto Import`.",
             "",
-            "3) If Telegram does not open it, paste the same clash:// link into your browser.",
-            f"<code>{html.escape(clash_link)}</code>",
+            "3) If button does not open app, paste this clash:// link into your browser:",
+            clash_link,
             "",
             "4) Fallback: Clash Verge Rev -> Profiles -> Import -> From URL, paste:",
-            f"<code>{html.escape(clash_sub_url)}</code>",
+            clash_sub_url,
         ]
+        if not has_auto_button:
+            lines.insert(6, "Auto-import button is not configured on server, using manual links only.")
+            lines.insert(7, "")
     else:
         lines += [
             "2) Auto-import is not configured on server.",
@@ -853,13 +902,17 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             )
             delivery_keyboard = _ios_keyboard(karing_link=delivery_link)
         else:
-            delivery_link, clash_sub_url = _windows_clash_link(
+            delivery_link, clash_sub_url, clash_auto_url = _windows_clash_link(
                 cfg=cfg, email=email, client_id=client_id, sub_id=sub_id
             )
-            delivery_text = _windows_message(clash_link=delivery_link, clash_sub_url=clash_sub_url)
-            delivery_keyboard = _windows_keyboard(sub_url=clash_sub_url)
+            delivery_text = _windows_message(
+                clash_link=delivery_link,
+                clash_sub_url=clash_sub_url,
+                has_auto_button=bool(clash_auto_url),
+            )
+            delivery_keyboard = _windows_keyboard(auto_url=clash_auto_url, sub_url=clash_sub_url)
 
-        parse_mode = "Markdown" if requested_os == "ios" else "HTML"
+        parse_mode = "Markdown" if requested_os == "ios" else None
 
         try:
             await context.bot.send_message(
