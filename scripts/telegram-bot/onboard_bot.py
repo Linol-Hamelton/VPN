@@ -529,6 +529,41 @@ def _windows_message(*, clash_link: str, vless_link: str) -> str:
     return "\n".join(lines)
 
 
+def _android_message(*, cfg: BotConfig, email: str, vless_link: str, client_id: str, sub_id: str) -> str:
+    sub_url = _render_sub_url(cfg=cfg, email=email, client_id=client_id, sub_id=sub_id)
+
+    def inline_code(s: str) -> str:
+        return "`" + (s or "").strip() + "`"
+
+    lines = [
+        "Android setup (VLESS Reality) is ready.",
+        "",
+        "1) Install a client app (pick one):",
+        "- Hiddify Next (Android)",
+        "- v2rayNG",
+        "",
+        "2) Import profile:",
+    ]
+
+    if sub_url:
+        lines += [
+            "- Preferred (easy updates): import this subscription URL:",
+            inline_code(sub_url),
+            "",
+        ]
+
+    lines += [
+        "- Or import single VLESS link from clipboard:",
+        inline_code(vless_link),
+        "",
+        "3) In the app: select the profile and connect (allow VPN permission when Android asks).",
+        "",
+        "If connection fails: check mobile/Wi-Fi restrictions and try refreshing subscription.",
+    ]
+
+    return "\n".join(lines)
+
+
 def _ios_message(*, cfg: BotConfig, email: str, vless_link: str, client_id: str, sub_id: str) -> str:
     karing, has_sub = _ios_karing_link(
         cfg=cfg, email=email, vless_link=vless_link, client_id=client_id, sub_id=sub_id
@@ -746,7 +781,7 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     store.pop(req_id, None)
     _pending_save(cfg.pending_file, store)
 
-    if requested_os not in ("ios", "windows"):
+    if requested_os not in ("ios", "windows", "android"):
         store.pop(req_id, None)
         _pending_save(cfg.pending_file, store)
         await q.edit_message_text(f"Approved (not implemented): {display} ({user_id}) OS={requested_os}")
@@ -757,7 +792,7 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 pass
         return
 
-    # iOS/Windows: create x-ui client (email = telegram user id)
+    # iOS/Windows/Android: create x-ui client (email = telegram user id)
     email = str(user_id)
     out_dir = Path(cfg.output_dir)
     out_file = out_dir / f"client-pack-{requested_os}-{email}.txt"
@@ -915,13 +950,14 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     await q.edit_message_text(f"Approved: {display} {username} ({user_id}) client={client_id}")
     if chat_id:
+        delivery_link = ""
         if requested_os == "ios":
             delivery_text = _ios_message(cfg=cfg, email=email, vless_link=vless, client_id=client_id, sub_id=sub_id)
             delivery_link, _has_sub = _ios_karing_link(
                 cfg=cfg, email=email, vless_link=vless, client_id=client_id, sub_id=sub_id
             )
             delivery_keyboard = _ios_keyboard(karing_link=delivery_link)
-        else:
+        elif requested_os == "windows":
             delivery_link, clash_sub_url, clash_auto_url = _windows_clash_link(
                 cfg=cfg, email=email, client_id=client_id, sub_id=sub_id
             )
@@ -930,6 +966,9 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             manual_link = clash_sub_url
             delivery_text = _windows_message(clash_link=delivery_link, vless_link=manual_link)
             delivery_keyboard = _windows_keyboard(auto_url=clash_auto_url, sub_url=clash_sub_url)
+        else:
+            delivery_text = _android_message(cfg=cfg, email=email, vless_link=vless, client_id=client_id, sub_id=sub_id)
+            delivery_keyboard = None
 
         parse_mode = "Markdown"
 

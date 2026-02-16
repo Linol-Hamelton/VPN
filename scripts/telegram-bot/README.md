@@ -1,4 +1,4 @@
-# Telegram Onboarding Bot (iOS + Windows)
+# Telegram Onboarding Bot (iOS + Windows + Android)
 
 This bot implements:
 
@@ -9,6 +9,7 @@ This bot implements:
   - Telegram user id is used as x-ui client `email`
   - bot calls `scripts/x-ui/create-ios-user.sh`
   - iOS: sends `vless://...` and optional Karing deep-link (`karing://install-config?...`)
+  - Android: sends subscription URL (if configured) and `vless://...` for manual import
 - Windows: sends Clash subscription URL and (optionally) a one-click HTTP bridge that opens `clash://install-config?...`
 
 ## Requirements (server)
