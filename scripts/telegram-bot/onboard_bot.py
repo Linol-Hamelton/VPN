@@ -206,6 +206,8 @@ class BotConfig:
     output_dir: str
     lock_file: str
     pending_file: str
+    lock_wait_secs: float
+    create_timeout_secs: float
 
 
 def _load_config() -> BotConfig:
@@ -224,6 +226,8 @@ def _load_config() -> BotConfig:
     output_dir = os.getenv("BOT_OUTPUT_DIR", "/var/lib/vpn-onboard").strip()
     lock_file = os.getenv("BOT_LOCK_FILE", "/var/lock/vpn-onboard-xui.lock").strip()
     pending_file = os.getenv("BOT_PENDING_FILE", "/var/lib/vpn-onboard/pending.json").strip()
+    lock_wait_secs = float(os.getenv("BOT_LOCK_WAIT_SECS", "30").strip() or "30")
+    create_timeout_secs = float(os.getenv("BOT_CREATE_TIMEOUT_SECS", "90").strip() or "90")
     return BotConfig(
         token=token,
         admin_ids=admins,
@@ -234,6 +238,8 @@ def _load_config() -> BotConfig:
         output_dir=output_dir,
         lock_file=lock_file,
         pending_file=pending_file,
+        lock_wait_secs=lock_wait_secs,
+        create_timeout_secs=create_timeout_secs,
     )
 
 
@@ -277,7 +283,17 @@ def _run_create_ios_user(
         "--db",
         cfg.xui_db,
     ]
-    p = subprocess.run(cmd, check=False, capture_output=True, text=True)
+    try:
+        p = subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=cfg.create_timeout_secs,
+        )
+    except subprocess.TimeoutExpired as e:
+        # Return a clear error; caller will report to admin/user.
+        return 124, (e.stdout or ""), (e.stderr or "timeout"), None
 
     js: Optional[Dict[str, Any]] = None
     json_path = Path(str(out_file) + ".json")
@@ -478,10 +494,29 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     out_dir = Path(cfg.output_dir)
     out_file = out_dir / f"client-pack-ios-{email}.txt"
 
-    template_link, template = _read_template_link()
+    # Immediately show progress in admin chat so it doesn't look like a "dead" button.
+    try:
+        await q.edit_message_text(f"Processing: {display} ({user_id}) OS=ios ...")
+    except Exception:
+        pass
 
     try:
-        lock_f = await asyncio.to_thread(_lock_path, cfg.lock_file)
+        template_link, template = _read_template_link()
+    except SystemExit as e:
+        await q.edit_message_text(f"Approve failed: template link not configured ({e}).")
+        return
+    except Exception as e:
+        await q.edit_message_text(f"Approve failed: template link error: {e}")
+        return
+
+    try:
+        lock_f = await asyncio.wait_for(
+            asyncio.to_thread(_lock_path, cfg.lock_file),
+            timeout=cfg.lock_wait_secs,
+        )
+    except asyncio.TimeoutError:
+        await q.edit_message_text("Approve failed: server is busy (lock timeout). Try again.")
+        return
     except Exception as e:
         await q.edit_message_text(f"Lock error: {e}")
         return
@@ -526,7 +561,10 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             client_id = existing_uuid
 
     if not vless:
-        await q.edit_message_text(f"Approved but failed: {display} ({user_id})")
+        # Include stderr snippet for debugging.
+        snippet = (err or out or "").strip().replace("\r", "")
+        snippet = snippet[-700:] if snippet else ""
+        await q.edit_message_text(f"Approved but failed: {display} ({user_id}) rc={rc}\n{snippet}")
         if chat_id:
             try:
                 await context.bot.send_message(chat_id=chat_id, text="Approved, but failed to generate connection link. Contact admin.")
