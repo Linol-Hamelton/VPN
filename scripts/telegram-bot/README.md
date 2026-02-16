@@ -8,8 +8,8 @@ This bot implements:
 - Implemented provisioning:
   - Telegram user id is used as x-ui client `email`
   - bot calls `scripts/x-ui/create-ios-user.sh`
-  - iOS: sends `vless://...` and optional Karing deep-link (`karing://install-config?...`)
-  - Android: sends subscription URL (if configured) and `vless://...` for manual import
+- iOS: sends `vless://...` and optional Karing deep-link (`karing://install-config?...`)
+- Android: sends subscription URL (if configured), optional one-click HTTP bridge for Hiddify, and `vless://...` for manual import
 - Windows: sends Clash subscription URL and (optionally) a one-click HTTP bridge that opens `clash://install-config?...`
 
 ## Requirements (server)
@@ -83,6 +83,16 @@ XUI_CLASH_SUB_URL_TEMPLATE=
 # Example:
 # XUI_CLASH_BRIDGE_URL_TEMPLATE=http://{server}:25501/open?sub={sub_url_enc}
 XUI_CLASH_BRIDGE_URL_TEMPLATE=
+
+# Optional (recommended for Android Hiddify one-click):
+# Telegram may not open hiddify:// links directly in message text.
+# Use HTTP bridge URL that redirects to hiddify://import/... .
+# Supported placeholders:
+# {email}, {uuid}, {client_id}, {sub_id}, {subid}, {server}, {port},
+# {sub_url}, {sub_url_enc}, {hiddify_link}, {hiddify_link_enc}
+# Example:
+# XUI_HIDDIFY_BRIDGE_URL_TEMPLATE=http://{server}:25501/h-open?sub={sub_url_enc}&name=VPN-{email}
+XUI_HIDDIFY_BRIDGE_URL_TEMPLATE=
 ```
 
 5. Run (from repo root):
@@ -98,7 +108,7 @@ If polling fails, ensure there is no webhook set on this token:
 curl -s "https://api.telegram.org/bot$BOT_TOKEN/deleteWebhook" | jq
 ```
 
-## Optional: Run Clash Deeplink Bridge (for Windows one-click button)
+## Optional: Run Deeplink Bridge (for Windows/Android one-click buttons)
 
 Install systemd unit and start:
 

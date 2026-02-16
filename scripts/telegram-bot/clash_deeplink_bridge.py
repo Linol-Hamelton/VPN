@@ -12,6 +12,12 @@ def _build_clash_link(sub_url: str) -> str:
     return f"clash://install-config?url={quote(sub_url, safe='')}"
 
 
+def _build_hiddify_link(sub_url: str, name: str) -> str:
+    enc_sub = quote(sub_url, safe="")
+    enc_name = quote((name or "").strip() or "VPN", safe="")
+    return f"hiddify://import/{enc_sub}#{enc_name}"
+
+
 def _valid_sub_url(sub_url: str) -> bool:
     try:
         u = urlparse(sub_url.strip())
@@ -20,15 +26,17 @@ def _valid_sub_url(sub_url: str) -> bool:
     return u.scheme in ("http", "https") and bool(u.netloc)
 
 
-def _html_page(sub_url: str, clash_link: str) -> str:
+def _html_page(*, title: str, button_text: str, sub_url: str, deep_link: str) -> str:
     sub_esc = html.escape(sub_url, quote=True)
-    clash_esc = html.escape(clash_link, quote=True)
+    deep_esc = html.escape(deep_link, quote=True)
+    title_esc = html.escape(title, quote=True)
+    button_esc = html.escape(button_text, quote=True)
     return f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Open Clash Verge</title>
+  <title>{title_esc}</title>
   <style>
     body {{ font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }}
     .card {{ border: 1px solid #ddd; border-radius: 12px; padding: 1rem; }}
@@ -38,20 +46,20 @@ def _html_page(sub_url: str, clash_link: str) -> str:
 </head>
 <body>
   <div class="card">
-    <h2>Opening Clash Verge...</h2>
+    <h2>Opening app...</h2>
     <p>If app did not open automatically, click:</p>
-    <p><a class="btn" href="{clash_esc}">Open Clash Verge Auto Import</a></p>
-    <p>Raw clash:// link:</p>
-    <p><code>{clash_esc}</code></p>
+    <p><a class="btn" href="{deep_esc}">{button_esc}</a></p>
+    <p>Raw deep-link:</p>
+    <p><code>{deep_esc}</code></p>
     <p>Fallback subscription URL:</p>
     <p><code>{sub_esc}</code></p>
   </div>
   <script>
     (function () {{
       // One attempt only. Do not duplicate with meta-refresh.
-      var url = "{clash_esc}";
-      if (window.__clash_opened) return;
-      window.__clash_opened = true;
+      var url = "{deep_esc}";
+      if (window.__app_opened) return;
+      window.__app_opened = true;
       try {{ window.location.replace(url); }} catch (e) {{}}
     }})();
   </script>
@@ -61,11 +69,11 @@ def _html_page(sub_url: str, clash_link: str) -> str:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "clash-bridge/1.1"
+    server_version = "deeplink-bridge/1.2"
 
     def do_GET(self) -> None:
         u = urlparse(self.path)
-        if u.path not in ("/", "/open"):
+        if u.path not in ("/", "/open", "/h-open"):
             self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
             return
 
@@ -75,8 +83,23 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.BAD_REQUEST, "Invalid or missing sub/url parameter")
             return
 
-        clash_link = _build_clash_link(sub_url)
-        body = _html_page(sub_url, clash_link).encode("utf-8")
+        if u.path == "/h-open":
+            name = (q.get("name", [""])[0] or "VPN").strip() or "VPN"
+            deep_link = _build_hiddify_link(sub_url, name)
+            body = _html_page(
+                title="Open Hiddify Next",
+                button_text="Open Hiddify Auto Import",
+                sub_url=sub_url,
+                deep_link=deep_link,
+            ).encode("utf-8")
+        else:
+            deep_link = _build_clash_link(sub_url)
+            body = _html_page(
+                title="Open Clash Verge",
+                button_text="Open Clash Verge Auto Import",
+                sub_url=sub_url,
+                deep_link=deep_link,
+            ).encode("utf-8")
 
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -90,7 +113,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="HTTP bridge for Clash Verge deep-link.")
+    ap = argparse.ArgumentParser(description="HTTP bridge for Clash/Hiddify deep-link.")
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=25501)
     args = ap.parse_args()

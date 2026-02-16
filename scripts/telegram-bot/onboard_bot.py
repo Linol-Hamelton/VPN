@@ -259,6 +259,7 @@ class BotConfig:
     xui_sub_url_template: str
     xui_clash_sub_url_template: str
     xui_clash_bridge_url_template: str
+    xui_hiddify_bridge_url_template: str
     send_client_pack: bool
 
 
@@ -283,6 +284,10 @@ def _load_config() -> BotConfig:
     sub_url_template = os.getenv("XUI_SUB_URL_TEMPLATE", "").strip()
     clash_sub_url_template = os.getenv("XUI_CLASH_SUB_URL_TEMPLATE", "").strip()
     clash_bridge_url_template = os.getenv("XUI_CLASH_BRIDGE_URL_TEMPLATE", "").strip()
+    hiddify_bridge_url_template = os.getenv(
+        "XUI_HIDDIFY_BRIDGE_URL_TEMPLATE",
+        "http://{server}:25501/h-open?sub={sub_url_enc}&name=VPN-{email}",
+    ).strip()
     send_client_pack = (os.getenv("BOT_SEND_CLIENT_PACK", "0").strip().lower() in ("1", "true", "yes", "y", "on"))
     return BotConfig(
         token=token,
@@ -299,6 +304,7 @@ def _load_config() -> BotConfig:
         xui_sub_url_template=sub_url_template,
         xui_clash_sub_url_template=clash_sub_url_template,
         xui_clash_bridge_url_template=clash_bridge_url_template,
+        xui_hiddify_bridge_url_template=hiddify_bridge_url_template,
         send_client_pack=send_client_pack,
     )
 
@@ -456,6 +462,36 @@ def _render_clash_bridge_url(
         return ""
 
 
+def _render_hiddify_bridge_url(
+    *,
+    cfg: BotConfig,
+    email: str,
+    client_id: str,
+    sub_id: str,
+    sub_url: str,
+    hiddify_link: str,
+) -> str:
+    tpl = (cfg.xui_hiddify_bridge_url_template or "").strip()
+    if not tpl:
+        return ""
+    try:
+        return tpl.format(
+            email=email,
+            uuid=client_id,
+            client_id=client_id,
+            sub_id=sub_id,
+            subid=sub_id,
+            server=cfg.xui_server_host,
+            port=str(cfg.xui_inbound_port),
+            sub_url=sub_url,
+            sub_url_enc=quote(sub_url, safe=""),
+            hiddify_link=hiddify_link,
+            hiddify_link_enc=quote(hiddify_link, safe=""),
+        ).strip()
+    except Exception:
+        return ""
+
+
 def _ios_karing_link(*, cfg: BotConfig, email: str, vless_link: str, client_id: str, sub_id: str) -> Tuple[str, bool]:
     sub_url = _render_sub_url(cfg=cfg, email=email, client_id=client_id, sub_id=sub_id)
     if not sub_url:
@@ -541,9 +577,30 @@ def _hiddify_import_link(*, url: str, name: str) -> str:
     return f"hiddify://import/{enc_url}#{enc_name}"
 
 
-def _android_message(*, cfg: BotConfig, email: str, vless_link: str, client_id: str, sub_id: str) -> str:
+def _android_links(*, cfg: BotConfig, email: str, client_id: str, sub_id: str) -> Tuple[str, str, str]:
     sub_url = _render_sub_url(cfg=cfg, email=email, client_id=client_id, sub_id=sub_id)
-    hiddify_link = _hiddify_import_link(url=sub_url, name=f"VPN-{email}") if sub_url else ""
+    if not sub_url:
+        return "", "", ""
+    hiddify_link = _hiddify_import_link(url=sub_url, name=f"VPN-{email}")
+    auto_url = _render_hiddify_bridge_url(
+        cfg=cfg,
+        email=email,
+        client_id=client_id,
+        sub_id=sub_id,
+        sub_url=sub_url,
+        hiddify_link=hiddify_link,
+    )
+    return hiddify_link, sub_url, auto_url
+
+
+def _android_keyboard(*, auto_url: str) -> Optional[InlineKeyboardMarkup]:
+    if not auto_url:
+        return None
+    return InlineKeyboardMarkup([[InlineKeyboardButton("Open Hiddify Auto Import", url=auto_url)]])
+
+
+def _android_message(*, cfg: BotConfig, email: str, vless_link: str, client_id: str, sub_id: str) -> str:
+    hiddify_link, sub_url, auto_url = _android_links(cfg=cfg, email=email, client_id=client_id, sub_id=sub_id)
 
     def inline_code(s: str) -> str:
         return "`" + (s or "").strip() + "`"
@@ -557,9 +614,12 @@ def _android_message(*, cfg: BotConfig, email: str, vless_link: str, client_id: 
     ]
 
     if hiddify_link:
+        auto_line = auto_url
+        if auto_url:
+            auto_line = f"[Open Hiddify Auto Import]({auto_url})"
         lines += [
             "2) Авто-импорт (в 1 клик):",
-            hiddify_link,
+            auto_line or hiddify_link,
             "Если Telegram не откроет приложение, скопируй эту ссылку в браузер и подтверди открытие Hiddify.",
             "",
             "3) Ручной импорт (если авто-импорт не сработал):",
@@ -995,7 +1055,10 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             delivery_keyboard = _windows_keyboard(auto_url=clash_auto_url, sub_url=clash_sub_url)
         else:
             delivery_text = _android_message(cfg=cfg, email=email, vless_link=vless, client_id=client_id, sub_id=sub_id)
-            delivery_keyboard = None
+            _h_link, _sub_url, android_auto_url = _android_links(
+                cfg=cfg, email=email, client_id=client_id, sub_id=sub_id
+            )
+            delivery_keyboard = _android_keyboard(auto_url=android_auto_url)
 
         parse_mode = "Markdown"
 
