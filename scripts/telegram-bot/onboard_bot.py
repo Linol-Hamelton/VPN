@@ -529,36 +529,59 @@ def _windows_message(*, clash_link: str, vless_link: str) -> str:
     return "\n".join(lines)
 
 
+def _hiddify_import_link(*, url: str, name: str) -> str:
+    # Official Hiddify URL scheme:
+    # hiddify://import/<sublink>#<name>
+    if not (url or "").strip():
+        return ""
+    return f"hiddify://import/{url.strip()}#{quote((name or '').strip() or 'VPN', safe='')}"
+
+
 def _android_message(*, cfg: BotConfig, email: str, vless_link: str, client_id: str, sub_id: str) -> str:
     sub_url = _render_sub_url(cfg=cfg, email=email, client_id=client_id, sub_id=sub_id)
+    hiddify_link = _hiddify_import_link(url=sub_url, name=f"VPN-{email}") if sub_url else ""
 
     def inline_code(s: str) -> str:
         return "`" + (s or "").strip() + "`"
 
     lines = [
-        "Android setup (VLESS Reality) is ready.",
+        "Android (Hiddify Next) подключение готово.",
         "",
-        "1) Install a client app (pick one):",
-        "- Hiddify Next (Android)",
-        "- v2rayNG",
+        "1) Установи Hiddify Next (Google Play):",
+        "https://play.google.com/store/apps/details?id=app.hiddify.com",
         "",
-        "2) Import profile:",
+    ]
+
+    if hiddify_link:
+        lines += [
+            "2) Авто-импорт (в 1 клик):",
+            hiddify_link,
+            "Если Telegram не откроет приложение, скопируй эту ссылку в браузер и подтверди открытие Hiddify.",
+            "",
+            "3) Ручной импорт (если авто-импорт не сработал):",
+        ]
+    else:
+        lines += [
+            "2) Авто-импорт недоступен: не настроен subscription URL на сервере.",
+            "",
+            "3) Ручной импорт:",
+        ]
+
+    lines += [
+        "Открой Hiddify -> нажми '+' -> Add from Clipboard и вставь:",
+        inline_code(vless_link),
     ]
 
     if sub_url:
         lines += [
-            "- Preferred (easy updates): import this subscription URL:",
-            inline_code(sub_url),
             "",
+            "Либо добавь подписку вручную (удобно для автообновлений):",
+            inline_code(sub_url),
         ]
 
     lines += [
-        "- Or import single VLESS link from clipboard:",
-        inline_code(vless_link),
         "",
-        "3) In the app: select the profile and connect (allow VPN permission when Android asks).",
-        "",
-        "If connection fails: check mobile/Wi-Fi restrictions and try refreshing subscription.",
+        "4) Выбери профиль и нажми Подключить (разреши VPN-доступ, когда Android спросит).",
     ]
 
     return "\n".join(lines)
