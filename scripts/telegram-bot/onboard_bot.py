@@ -437,7 +437,7 @@ def _ios_message(*, cfg: BotConfig, email: str, vless_link: str, client_id: str)
         step3 = 2
 
     lines += [
-        f"{step3}) Кликни на ссылку -> открой Karing -> Add config -> Paste from clipboard и вставь:",
+        f"{step3}) Кликни на ссылку -> открой Karing -> Добавить профиль -> Импорт из буфера обмена -> Не забудь заполнить примечание (например VPN) -> Нажми на галочку",
         inline_code(vless_link),
     ]
 
