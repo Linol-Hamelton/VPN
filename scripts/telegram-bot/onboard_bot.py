@@ -396,37 +396,52 @@ def _render_sub_url(*, cfg: BotConfig, email: str, client_id: str) -> str:
 
 def _ios_karing_link(*, cfg: BotConfig, email: str, vless_link: str, client_id: str) -> Tuple[str, bool]:
     sub_url = _render_sub_url(cfg=cfg, email=email, client_id=client_id)
-    return _karing_install_link(url=(sub_url or vless_link), name=f"VPN-{email}"), bool(sub_url)
+    if not sub_url:
+        return "", False
+    return _karing_install_link(url=sub_url, name=f"VPN-{email}"), True
 
 
-def _ios_keyboard(*, karing_link: str) -> InlineKeyboardMarkup:
-    # A URL button is the most reliable way to present (and copy) a link in Telegram.
+def _ios_keyboard(*, karing_link: str) -> Optional[InlineKeyboardMarkup]:
+    if not karing_link:
+        return None
+    # A URL button is the most reliable way to present (and tap) a link in Telegram.
     return InlineKeyboardMarkup([[InlineKeyboardButton("Open Karing (Auto Import)", url=karing_link)]])
 
 
 def _ios_message(*, cfg: BotConfig, email: str, vless_link: str, client_id: str) -> str:
     karing, has_sub = _ios_karing_link(cfg=cfg, email=email, vless_link=vless_link, client_id=client_id)
-    return "\n".join(
-        [
-            "iOS (Karing) setup",
+
+    # IMPORTANT:
+    # - No leading spaces: Telegram often stops auto-linking custom schemes (vless://, karing://) when indented.
+    # - Keep the manual path short (copy/paste in the app).
+    lines = [
+        "iOS (Karing) подключение готово.",
+        "",
+        "1) Установи Karing: https://apps.apple.com/app/karing/id6472431552",
+        "",
+    ]
+
+    if has_sub:
+        lines += [
+            "2) Авто-импорт (лучше всего работает через URL подписки):",
+            karing,
             "",
-            "1) Install Karing (App Store): https://apps.apple.com/app/karing/id6472431552",
-            "",
-            "2) Enable scheme calls in Karing (required for auto import):",
-            "   Karing -> Settings -> System Scheme Call -> enable karing://",
-            "",
-            "3) Auto import:",
-            "   Tap the button below. If Telegram blocks it, copy this link into Notes app and tap it:",
-            f"   {karing}",
-            "",
-            "4) Manual import (always works):",
-            "   Karing -> Add config -> Paste from clipboard, then paste this vless link:",
-            f"   {vless_link}",
-            "",
-            "Note: vless:// links won't import via Safari. They must be imported inside the VPN app.",
-            ("Tip: Configure XUI_SUB_URL_TEMPLATE for best auto-import reliability." if not has_sub else ""),
         ]
-    )
+        # We intentionally do NOT mention extra toggles here.
+        # If a user's device blocks scheme opens, they can still use manual import below.
+    else:
+        lines += [
+            "2) Открой Karing -> Add config -> Paste from clipboard и вставь:",
+            vless_link,
+            "",
+        ]
+
+    lines += [
+        "Если авто-импорт не сработал: открой Karing -> Add config -> Paste from clipboard и вставь этот vless://",
+        vless_link,
+    ]
+
+    return "\n".join(lines)
 
 
 def _pending_load(path: str) -> Dict[str, Any]:
@@ -746,6 +761,17 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 )
             except Exception:
                 pass
+
+        # Also send the raw vless link as a separate message (no extra text, no indent)
+        # so Telegram is more likely to treat it as a tappable/copyable link.
+        try:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=vless,
+                disable_web_page_preview=True,
+            )
+        except Exception:
+            pass
         if out_file.exists():
             try:
                 await context.bot.send_document(chat_id=chat_id, document=out_file.read_bytes(), filename=out_file.name)
