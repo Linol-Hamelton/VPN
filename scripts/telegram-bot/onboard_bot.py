@@ -124,7 +124,7 @@ def _parse_template_vless(link: str) -> Dict[str, str]:
         return {}
     u = urlparse(link)
     if u.scheme.lower() != "vless":
-        _fail("XUI_TEMPLATE_VLESS_LINK must start with vless://")
+        raise ValueError("template vless link must start with vless://")
 
     # netloc is "<uuid>@host:port" (uuid is irrelevant for template)
     hostport = u.netloc.rsplit("@", 1)[-1]
@@ -166,10 +166,12 @@ def _read_template_link() -> Tuple[str, Dict[str, str]]:
     if file_path:
         p = Path(file_path)
         if not p.exists():
-            _fail(f"XUI_TEMPLATE_VLESS_FILE not found: {file_path}")
+            raise FileNotFoundError(f"XUI_TEMPLATE_VLESS_FILE not found: {file_path}")
         direct = p.read_text(encoding="utf-8", errors="ignore").strip()
     if not direct:
-        _fail("Set XUI_TEMPLATE_VLESS_FILE or XUI_TEMPLATE_VLESS_LINK (export a vless:// link from x-ui Share).")
+        raise ValueError(
+            "template vless is empty. Set XUI_TEMPLATE_VLESS_FILE or XUI_TEMPLATE_VLESS_LINK (export a vless:// link from x-ui Share)."
+        )
     return direct, _parse_template_vless(direct)
 
 
@@ -502,7 +504,7 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     try:
         template_link, template = _read_template_link()
-    except SystemExit:
+    except Exception as e:
         file_path = os.getenv("XUI_TEMPLATE_VLESS_FILE", "").strip()
         direct = os.getenv("XUI_TEMPLATE_VLESS_LINK", "").strip()
         direct_state = "set" if direct else "-"
@@ -512,13 +514,11 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     "Approve failed: template vless is not configured/invalid.",
                     f"- XUI_TEMPLATE_VLESS_FILE={file_path or '-'}",
                     f"- XUI_TEMPLATE_VLESS_LINK={direct_state}",
+                    f"- error: {e}",
                     "Fix: set XUI_TEMPLATE_VLESS_FILE to a file that contains a single line starting with vless:// (export from x-ui Share).",
                 ]
             )
         )
-        return
-    except Exception as e:
-        await q.edit_message_text(f"Approve failed: template link error: {e}")
         return
 
     try:
