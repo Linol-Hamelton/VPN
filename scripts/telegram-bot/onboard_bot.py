@@ -10,6 +10,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Set, Tuple
@@ -197,38 +198,47 @@ def _load_inbound_client_uuid(*, db_path: str, inbound_port: int, email: str) ->
 @dataclass(frozen=True)
 class BotConfig:
     token: str
-    allowed_ids: Set[int]
+    admin_ids: Set[int]
     xui_db: str
     xui_inbound_port: int
     xui_server_host: str
     xui_flow: str
     output_dir: str
     lock_file: str
+    pending_file: str
 
 
 def _load_config() -> BotConfig:
     token = _env("BOT_TOKEN")
-    allowed = _parse_allowed_ids(os.getenv("BOT_ALLOWED_IDS", "").strip())
+    admin_raw = os.getenv("BOT_ADMIN_IDS", "").strip()
+    if not admin_raw:
+        # Backward compatible: old name.
+        admin_raw = os.getenv("BOT_ALLOWED_IDS", "").strip()
+    admins = _parse_allowed_ids(admin_raw)
+    if not admins:
+        _fail("Set BOT_ADMIN_IDS (comma-separated Telegram user ids) for approval flow.")
     xui_db = os.getenv("XUI_DB", "/etc/x-ui/x-ui.db").strip()
     inbound_port = _parse_int("XUI_INBOUND_PORT", 32062)
     server_host = _env("XUI_SERVER_HOST")
     flow = os.getenv("XUI_FLOW", "xtls-rprx-vision").strip()
     output_dir = os.getenv("BOT_OUTPUT_DIR", "/var/lib/vpn-onboard").strip()
     lock_file = os.getenv("BOT_LOCK_FILE", "/var/lock/vpn-onboard-xui.lock").strip()
+    pending_file = os.getenv("BOT_PENDING_FILE", "/var/lib/vpn-onboard/pending.json").strip()
     return BotConfig(
         token=token,
-        allowed_ids=allowed,
+        admin_ids=admins,
         xui_db=xui_db,
         xui_inbound_port=inbound_port,
         xui_server_host=server_host,
         xui_flow=flow,
         output_dir=output_dir,
         lock_file=lock_file,
+        pending_file=pending_file,
     )
 
 
-def _check_allowed(cfg: BotConfig, user_id: int) -> bool:
-    return (not cfg.allowed_ids) or (user_id in cfg.allowed_ids)
+def _is_admin(cfg: BotConfig, user_id: int) -> bool:
+    return user_id in cfg.admin_ids
 
 
 def _repo_root() -> Path:
@@ -297,6 +307,26 @@ def _format_ios_message(*, email: str, vless_link: str) -> str:
     )
 
 
+def _pending_load(path: str) -> Dict[str, Any]:
+    p = Path(path)
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text(encoding="utf-8", errors="ignore") or "{}")
+    except Exception:
+        return {}
+
+
+def _pending_save(path: str, data: Dict[str, Any]) -> None:
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data, ensure_ascii=True, indent=2), encoding="utf-8")
+
+
+def _new_request_id() -> str:
+    return uuid.uuid4().hex[:12]
+
+
 def _lock_path(path: str) -> Any:
     # Linux: fcntl lock. On non-Linux this still runs, but the bot is intended for the server.
     import fcntl  # type: ignore
@@ -309,11 +339,7 @@ def _lock_path(path: str) -> Any:
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    cfg: BotConfig = context.bot_data["cfg"]
-    uid = update.effective_user.id if update.effective_user else 0
-    if not _check_allowed(cfg, uid):
-        await update.message.reply_text("Доступ запрещен.")
-        return
+    # Access is open for everyone. Approvals are handled via BOT_ADMIN_IDS.
 
     kb = InlineKeyboardMarkup(
         [
@@ -327,7 +353,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             ],
         ]
     )
-    await update.message.reply_text("Выбери систему:", reply_markup=kb)
+    await update.message.reply_text("Choose platform:", reply_markup=kb)
 
 
 async def cb_choose_os(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -338,28 +364,126 @@ async def cb_choose_os(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await q.answer()
 
     uid = q.from_user.id if q.from_user else 0
-    if not _check_allowed(cfg, uid):
-        await q.edit_message_text("Доступ запрещен.")
+    data = (q.data or "").strip()
+    if not data.startswith("os:"):
         return
 
-    data = q.data or ""
-    if data != "os:ios":
-        await q.edit_message_text("Пока реализовано только iOS.")
+    os_name = data.split(":", 1)[1].strip().lower()
+    if os_name not in ("ios", "android", "windows", "macos"):
+        await q.edit_message_text("Unknown platform.")
         return
 
-    email = str(uid)  # requirement: Telegram user id instead of email
+    req_id = _new_request_id()
+    chat_id = q.message.chat_id if q.message else 0
+    user = q.from_user
+    username = f"@{user.username}" if user and user.username else ""
+    display = (f"{user.first_name or ''} {user.last_name or ''}".strip() if user else "") or username or str(uid)
+
+    store = _pending_load(cfg.pending_file)
+    store[req_id] = {
+        "request_id": req_id,
+        "requested_os": os_name,
+        "user_id": uid,
+        "chat_id": chat_id,
+        "username": username,
+        "display": display,
+        "ts": int(time.time()),
+    }
+    _pending_save(cfg.pending_file, store)
+
+    await q.edit_message_text("Request sent to admin. Please wait for approval.")
+
+    kb = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("Approve", callback_data=f"adm:ok:{req_id}"),
+                InlineKeyboardButton("Reject", callback_data=f"adm:no:{req_id}"),
+            ]
+        ]
+    )
+    admin_msg = "\n".join(
+        [
+            "New VPN access request:",
+            f"- OS: {os_name}",
+            f"- Name: {display}",
+            f"- Username: {username or '-'}",
+            f"- Telegram ID: {uid}",
+        ]
+    )
+    for admin_id in sorted(cfg.admin_ids):
+        try:
+            await context.bot.send_message(chat_id=admin_id, text=admin_msg, reply_markup=kb)
+        except Exception:
+            # Admin must start the bot first.
+            pass
+
+
+async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    cfg: BotConfig = context.bot_data["cfg"]
+    q = update.callback_query
+    if not q:
+        return
+    await q.answer()
+
+    admin_id = q.from_user.id if q.from_user else 0
+    if not _is_admin(cfg, admin_id):
+        await q.edit_message_text("Admin only.")
+        return
+
+    data = (q.data or "").strip()
+    parts = data.split(":")
+    if len(parts) != 3:
+        return
+    _prefix, action, req_id = parts
+
+    store = _pending_load(cfg.pending_file)
+    req = store.get(req_id)
+    if not isinstance(req, dict):
+        await q.edit_message_text("Request not found/expired.")
+        return
+
+    requested_os = str(req.get("requested_os") or "").strip().lower()
+    user_id = int(req.get("user_id") or 0)
+    chat_id = int(req.get("chat_id") or 0)
+    display = str(req.get("display") or user_id)
+    username = str(req.get("username") or "").strip()
+
+    if action == "no":
+        store.pop(req_id, None)
+        _pending_save(cfg.pending_file, store)
+        await q.edit_message_text(f"Rejected: {display} ({user_id}) OS={requested_os}")
+        if chat_id:
+            try:
+                await context.bot.send_message(chat_id=chat_id, text="Admin rejected your request.")
+            except Exception:
+                pass
+        return
+
+    if action != "ok":
+        return
+
+    if requested_os != "ios":
+        store.pop(req_id, None)
+        _pending_save(cfg.pending_file, store)
+        await q.edit_message_text(f"Approved (not implemented): {display} ({user_id}) OS={requested_os}")
+        if chat_id:
+            try:
+                await context.bot.send_message(chat_id=chat_id, text=f"Approved. {requested_os} is not implemented yet.")
+            except Exception:
+                pass
+        return
+
+    # iOS: create x-ui client (email = telegram user id)
+    email = str(user_id)
     out_dir = Path(cfg.output_dir)
     out_file = out_dir / f"client-pack-ios-{email}.txt"
 
-    # Load template vless from file or env.
     template_link, template = _read_template_link()
 
-    # Serialize modifications (DB + x-ui restart).
-    await q.edit_message_text("Создаю конфиг для iOS, подожди 10-20 секунд...")
     try:
         lock_f = await asyncio.to_thread(_lock_path, cfg.lock_file)
     except Exception as e:
-        await context.bot.send_message(chat_id=q.message.chat_id, text=f"Ошибка lock: {e}")
+        await q.edit_message_text(f"Lock error: {e}")
         return
 
     try:
@@ -378,14 +502,11 @@ async def cb_choose_os(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     vless = ""
     client_id = ""
-    link_error = ""
     if isinstance(js, dict):
         vless = str(js.get("vless_link") or "").strip()
         client_id = str(js.get("id") or "").strip()
-        link_error = str(js.get("link_error") or "").strip()
 
     if rc != 0 or (not vless and "already exists" in (out + "\n" + err).lower()):
-        # Fallback: if user already exists, rebuild vless link from DB + template.
         existing_uuid = _load_inbound_client_uuid(
             db_path=cfg.xui_db, inbound_port=cfg.xui_inbound_port, email=email
         )
@@ -405,37 +526,30 @@ async def cb_choose_os(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             client_id = existing_uuid
 
     if not vless:
-        details = (err or out or "").strip()
-        details = details[-1500:] if details else ""
-        msg = "\n".join(
-            [
-                "Не удалось собрать `vless://` ссылку автоматически.",
-                "",
-                f"- email (telegram id): `{email}`",
-                f"- client id: `{client_id}`",
-                f"- link_error: `{link_error}`" if link_error else "",
-                "",
-                "Админу: проверь, что задан `XUI_TEMPLATE_VLESS_FILE` или `XUI_TEMPLATE_VLESS_LINK` (ссылка из x-ui Share).",
-            ]
-        )
-        if details:
-            msg += "\n\nЛог:\n" + f"```\n{details}\n```"
-        await context.bot.send_message(chat_id=q.message.chat_id, text=msg, parse_mode=ParseMode.MARKDOWN)
+        await q.edit_message_text(f"Approved but failed: {display} ({user_id})")
+        if chat_id:
+            try:
+                await context.bot.send_message(chat_id=chat_id, text="Approved, but failed to generate connection link. Contact admin.")
+            except Exception:
+                pass
         return
 
-    await context.bot.send_message(
-        chat_id=q.message.chat_id,
-        text=_format_ios_message(email=email, vless_link=vless),
-        parse_mode=ParseMode.MARKDOWN,
-        disable_web_page_preview=True,
-    )
+    store.pop(req_id, None)
+    _pending_save(cfg.pending_file, store)
 
-    # Send the generated "client pack" file if it exists (nice-to-have).
-    if out_file.exists():
-        try:
-            await context.bot.send_document(chat_id=q.message.chat_id, document=out_file.read_bytes(), filename=out_file.name)
-        except Exception:
-            pass
+    await q.edit_message_text(f"Approved: {display} {username} ({user_id}) client={client_id}")
+    if chat_id:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=_format_ios_message(email=email, vless_link=vless),
+            parse_mode=ParseMode.MARKDOWN,
+            disable_web_page_preview=True,
+        )
+        if out_file.exists():
+            try:
+                await context.bot.send_document(chat_id=chat_id, document=out_file.read_bytes(), filename=out_file.name)
+            except Exception:
+                pass
 
 
 async def post_init(app: Application) -> None:
@@ -461,10 +575,10 @@ def main() -> None:
 
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CallbackQueryHandler(cb_choose_os, pattern=r"^os:"))
+    app.add_handler(CallbackQueryHandler(cb_admin_action, pattern=r"^adm:"))
 
     app.run_polling(close_loop=False, allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":
     main()
-

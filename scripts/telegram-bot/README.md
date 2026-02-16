@@ -3,7 +3,9 @@
 This bot implements:
 
 - `/start` -> buttons (Android / iOS / Windows / MacOS)
-- For now only iOS is implemented:
+- Anyone can request access by choosing a platform.
+- Admin must approve via inline buttons (Approve/Reject).
+- For now only iOS provisioning is implemented:
   - Telegram user id is used as x-ui client `email`
   - bot calls `scripts/x-ui/create-ios-user.sh`
   - sends back `vless://...` and a Karing deep-link (`karing://install-config?...`)
@@ -40,13 +42,14 @@ python3 -m venv /opt/vpn-onboard-bot/.venv
 
 ```bash
 BOT_TOKEN=123456:ABCDEF
-BOT_ALLOWED_IDS=123456789
+BOT_ADMIN_IDS=123456789
 XUI_SERVER_HOST=144.31.227.53
 XUI_INBOUND_PORT=32062
 XUI_DB=/etc/x-ui/x-ui.db
 XUI_TEMPLATE_VLESS_FILE=/etc/x-ui/template.vless
 BOT_OUTPUT_DIR=/var/lib/vpn-onboard
 BOT_LOCK_FILE=/var/lock/vpn-onboard-xui.lock
+BOT_PENDING_FILE=/var/lib/vpn-onboard/pending.json
 ```
 
 5. Run (from repo root):
