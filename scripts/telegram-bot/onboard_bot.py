@@ -344,6 +344,14 @@ def _pending_save(path: str, data: Dict[str, Any]) -> None:
 def _new_request_id() -> str:
     return uuid.uuid4().hex[:12]
 
+def _missing_template_fields(t: Dict[str, str]) -> Tuple[str, ...]:
+    # For REALITY share links we need these non-secret fields to build a vless:// link.
+    missing = []
+    for k in ("pbk", "sni", "sid"):
+        if not (t.get(k) or "").strip():
+            missing.append(k)
+    return tuple(missing)
+
 
 def _lock_path(path: str) -> Any:
     # Linux: fcntl lock. On non-Linux this still runs, but the bot is intended for the server.
@@ -516,6 +524,20 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     f"- XUI_TEMPLATE_VLESS_LINK={direct_state}",
                     f"- error: {e}",
                     "Fix: set XUI_TEMPLATE_VLESS_FILE to a file that contains a single line starting with vless:// (export from x-ui Share).",
+                ]
+            )
+        )
+        return
+
+    missing = _missing_template_fields(template)
+    if missing:
+        await q.edit_message_text(
+            "\n".join(
+                [
+                    "Approve failed: template vless link is missing required REALITY fields.",
+                    f"- missing: {', '.join(missing)}",
+                    "Fix: export a real `vless://...` from x-ui Share/Export for this inbound.",
+                    "It must include query params like `pbk=...&sni=...&sid=...`.",
                 ]
             )
         )

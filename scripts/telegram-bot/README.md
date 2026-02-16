@@ -28,6 +28,9 @@ sudo mkdir -p /etc/x-ui
 sudo nano /etc/x-ui/template.vless
 ```
 
+The file must contain a real exported link for your REALITY inbound, including `pbk`, `sni`, `sid` in query params
+(example pattern: `...&pbk=...&sni=...&sid=...`).
+
 3. Install deps:
 
 ```bash
