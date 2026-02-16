@@ -17,7 +17,6 @@ from typing import Any, Dict, Optional, Set, Tuple
 from urllib.parse import parse_qs, quote, urlparse
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -325,6 +324,36 @@ def _format_ios_message(*, email: str, vless_link: str) -> str:
     )
 
 
+def _ios_keyboard(*, email: str, vless_link: str) -> InlineKeyboardMarkup:
+    # A URL button is the most reliable way to present custom schemes in Telegram.
+    karing = _karing_install_link(url=vless_link, name=f"VPN-{email}")
+    return InlineKeyboardMarkup([[InlineKeyboardButton("Open Karing (Auto Import)", url=karing)]])
+
+
+def _ios_message(*, email: str, vless_link: str) -> str:
+    karing = _karing_install_link(url=vless_link, name=f"VPN-{email}")
+    return "\n".join(
+        [
+            "iOS (Karing) setup",
+            "",
+            "1) Install Karing (App Store): https://apps.apple.com/app/karing/id6472431552",
+            "",
+            "2) Enable scheme calls in Karing (required for auto import):",
+            "   Karing -> Settings -> System Scheme Call -> enable karing://",
+            "",
+            "3) Auto import:",
+            "   Tap the button below. If Telegram blocks it, copy this link into Notes app and tap it:",
+            f"   {karing}",
+            "",
+            "4) Manual import (always works):",
+            "   Karing -> Add config -> Paste from clipboard, then paste this vless link:",
+            f"   {vless_link}",
+            "",
+            "Note: vless:// links won't import via Safari. They must be imported inside the VPN app.",
+        ]
+    )
+
+
 def _pending_load(path: str) -> Dict[str, Any]:
     p = Path(path)
     if not p.exists():
@@ -615,8 +644,8 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if chat_id:
         await context.bot.send_message(
             chat_id=chat_id,
-            text=_format_ios_message(email=email, vless_link=vless),
-            parse_mode=ParseMode.MARKDOWN,
+            text=_ios_message(email=email, vless_link=vless),
+            reply_markup=_ios_keyboard(email=email, vless_link=vless),
             disable_web_page_preview=True,
         )
         if out_file.exists():
