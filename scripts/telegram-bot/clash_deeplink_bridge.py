@@ -29,7 +29,6 @@ def _html_page(sub_url: str, clash_link: str) -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Open Clash Verge</title>
-  <meta http-equiv="refresh" content="0;url={clash_esc}">
   <style>
     body {{ font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }}
     .card {{ border: 1px solid #ddd; border-radius: 12px; padding: 1rem; }}
@@ -48,9 +47,13 @@ def _html_page(sub_url: str, clash_link: str) -> str:
     <p><code>{sub_esc}</code></p>
   </div>
   <script>
-    setTimeout(function () {{
-      try {{ window.location.href = "{clash_esc}"; }} catch (e) {{}}
-    }}, 80);
+    (function () {{
+      // One attempt only. Do not duplicate with meta-refresh.
+      var url = "{clash_esc}";
+      if (window.__clash_opened) return;
+      window.__clash_opened = true;
+      try {{ window.location.replace(url); }} catch (e) {{}}
+    }})();
   </script>
 </body>
 </html>
@@ -58,7 +61,7 @@ def _html_page(sub_url: str, clash_link: str) -> str:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "clash-bridge/1.0"
+    server_version = "clash-bridge/1.1"
 
     def do_GET(self) -> None:
         u = urlparse(self.path)
