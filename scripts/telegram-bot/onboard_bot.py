@@ -534,7 +534,11 @@ def _hiddify_import_link(*, url: str, name: str) -> str:
     # hiddify://import/<sublink>#<name>
     if not (url or "").strip():
         return ""
-    return f"hiddify://import/{url.strip()}#{quote((name or '').strip() or 'VPN', safe='')}"
+    # URL-encode nested subscription URL so Telegram doesn't auto-detect the inner
+    # http(s) part as a separate link and open browser page instead of Hiddify.
+    enc_url = quote(url.strip(), safe="")
+    enc_name = quote((name or "").strip() or "VPN", safe="")
+    return f"hiddify://import/{enc_url}#{enc_name}"
 
 
 def _android_message(*, cfg: BotConfig, email: str, vless_link: str, client_id: str, sub_id: str) -> str:
