@@ -14,7 +14,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Set, Tuple
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.parse import parse_qs, quote, urlparse, urlunparse
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -84,8 +84,12 @@ def _now_ts() -> str:
 
 
 def _karing_install_link(*, url: str, name: str) -> str:
-    # Karing supports: karing://install-config?url=<urlencoded>&name=<urlencoded>
-    # If Telegram doesn't open custom schemes directly, user can copy/paste this into Safari.
+    # Karing deep-link (see xray deeplink docs):
+    # karing://install-config?url=<urlencoded>&name=<urlencoded>
+    #
+    # Note: In practice, Karing expects "url=" to point to a subscription/config URL (http/https),
+    # not a raw vless:// link. If you don't have a subscription URL, we still provide this deep-link
+    # as a best-effort, but manual import (paste vless:// into the app) is the reliable fallback.
     return f"karing://install-config?url={quote(url, safe='')}&name={quote(name, safe='')}"
 
 
@@ -115,6 +119,43 @@ def _vless_link(
         f"&type={typ}"
         f"#{frag}"
     )
+
+def _clone_template_vless(
+    template_link: str,
+    *,
+    server: str,
+    port: int,
+    client_id: str,
+    label: str,
+) -> str:
+    """
+    Build a vless:// link by cloning the full query string from an x-ui "Share" template.
+    This preserves optional fields (ex: spx) that some clients include in exports.
+    """
+    t = (template_link or "").strip()
+    u = urlparse(t)
+    if u.scheme.lower() != "vless":
+        raise ValueError("template vless link must start with vless://")
+
+    host = (server or "").strip()
+    if not host:
+        raise ValueError("server host is empty")
+    if ":" in host and not host.startswith("["):
+        # Likely IPv6
+        host = f"[{host}]"
+    netloc = f"{client_id}@{host}:{int(port)}"
+
+    frag = quote((label or "").strip() or "x-ui", safe="")
+    return urlunparse((u.scheme, netloc, u.path or "", u.params or "", u.query or "", frag))
+
+
+_UUID_RE = re.compile(r"([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})")
+
+
+def _extract_uuid(text: str) -> str:
+    m = _UUID_RE.search(text or "")
+    return (m.group(1) if m else "").strip()
+
 
 
 def _parse_template_vless(link: str) -> Dict[str, str]:
@@ -209,6 +250,7 @@ class BotConfig:
     pending_file: str
     lock_wait_secs: float
     create_timeout_secs: float
+    xui_sub_url_template: str
 
 
 def _load_config() -> BotConfig:
@@ -229,6 +271,7 @@ def _load_config() -> BotConfig:
     pending_file = os.getenv("BOT_PENDING_FILE", "/var/lib/vpn-onboard/pending.json").strip()
     lock_wait_secs = float(os.getenv("BOT_LOCK_WAIT_SECS", "30").strip() or "30")
     create_timeout_secs = float(os.getenv("BOT_CREATE_TIMEOUT_SECS", "90").strip() or "90")
+    sub_url_template = os.getenv("XUI_SUB_URL_TEMPLATE", "").strip()
     return BotConfig(
         token=token,
         admin_ids=admins,
@@ -241,6 +284,7 @@ def _load_config() -> BotConfig:
         pending_file=pending_file,
         lock_wait_secs=lock_wait_secs,
         create_timeout_secs=create_timeout_secs,
+        xui_sub_url_template=sub_url_template,
     )
 
 
@@ -324,14 +368,44 @@ def _format_ios_message(*, email: str, vless_link: str) -> str:
     )
 
 
-def _ios_keyboard(*, email: str, vless_link: str) -> InlineKeyboardMarkup:
-    # A URL button is the most reliable way to present custom schemes in Telegram.
-    karing = _karing_install_link(url=vless_link, name=f"VPN-{email}")
-    return InlineKeyboardMarkup([[InlineKeyboardButton("Open Karing (Auto Import)", url=karing)]])
+def _render_sub_url(*, cfg: BotConfig, email: str, client_id: str) -> str:
+    """
+    Optional subscription URL template to improve iOS auto-import reliability.
+
+    Admin provides XUI_SUB_URL_TEMPLATE, for example:
+    - https://sub.example.com/sub/{email}
+    - http://{server}:2096/sub/{uuid}
+    - https://{server}/sub/{client_id}
+    """
+    tpl = (cfg.xui_sub_url_template or "").strip()
+    if not tpl:
+        return ""
+    # Supported placeholders: {email}, {uuid}, {client_id}, {server}, {port}
+    try:
+        return tpl.format(
+            email=email,
+            uuid=client_id,
+            client_id=client_id,
+            server=cfg.xui_server_host,
+            port=str(cfg.xui_inbound_port),
+        ).strip()
+    except Exception:
+        # Misconfigured template; fall back to vless:// flow.
+        return ""
 
 
-def _ios_message(*, email: str, vless_link: str) -> str:
-    karing = _karing_install_link(url=vless_link, name=f"VPN-{email}")
+def _ios_karing_link(*, cfg: BotConfig, email: str, vless_link: str, client_id: str) -> Tuple[str, bool]:
+    sub_url = _render_sub_url(cfg=cfg, email=email, client_id=client_id)
+    return _karing_install_link(url=(sub_url or vless_link), name=f"VPN-{email}"), bool(sub_url)
+
+
+def _ios_keyboard(*, karing_link: str) -> InlineKeyboardMarkup:
+    # A URL button is the most reliable way to present (and copy) a link in Telegram.
+    return InlineKeyboardMarkup([[InlineKeyboardButton("Open Karing (Auto Import)", url=karing_link)]])
+
+
+def _ios_message(*, cfg: BotConfig, email: str, vless_link: str, client_id: str) -> str:
+    karing, has_sub = _ios_karing_link(cfg=cfg, email=email, vless_link=vless_link, client_id=client_id)
     return "\n".join(
         [
             "iOS (Karing) setup",
@@ -350,6 +424,7 @@ def _ios_message(*, email: str, vless_link: str) -> str:
             f"   {vless_link}",
             "",
             "Note: vless:// links won't import via Safari. They must be imported inside the VPN app.",
+            ("Tip: Configure XUI_SUB_URL_TEMPLATE for best auto-import reliability." if not has_sub else ""),
         ]
     )
 
@@ -604,26 +679,23 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         vless = str(js.get("vless_link") or "").strip()
         client_id = str(js.get("id") or "").strip()
 
-    # If the script didn't return a vless:// link, rebuild it from DB using the template
-    # (pbk/sni/sid are non-secret and stable for the inbound).
+    # If the script didn't return a vless:// link, rebuild it from the template.
+    # Prefer the created client UUID from JSON/stdout; fall back to DB lookup as last resort.
     if not vless:
-        existing_uuid = _load_inbound_client_uuid(
-            db_path=cfg.xui_db, inbound_port=cfg.xui_inbound_port, email=email
-        )
-        if existing_uuid and template.get("pbk") and template.get("sni") and template.get("sid"):
-            vless = _vless_link(
+        uuid_to_use = client_id or _extract_uuid("\n".join([out or "", err or ""]))
+        if not uuid_to_use:
+            uuid_to_use = _load_inbound_client_uuid(
+                db_path=cfg.xui_db, inbound_port=cfg.xui_inbound_port, email=email
+            ) or ""
+        if uuid_to_use:
+            vless = _clone_template_vless(
+                template_link,
                 server=cfg.xui_server_host,
                 port=cfg.xui_inbound_port,
-                client_id=existing_uuid,
+                client_id=uuid_to_use,
                 label=email,
-                flow=template.get("flow") or cfg.xui_flow,
-                sni=template["sni"],
-                sid=template["sid"],
-                pbk=template["pbk"],
-                fp=template.get("fp") or "chrome",
-                typ=template.get("type") or "tcp",
             )
-            client_id = existing_uuid
+            client_id = uuid_to_use
 
     if not vless:
         # Include stderr snippet for debugging.
@@ -642,12 +714,38 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     await q.edit_message_text(f"Approved: {display} {username} ({user_id}) client={client_id}")
     if chat_id:
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=_ios_message(email=email, vless_link=vless),
-            reply_markup=_ios_keyboard(email=email, vless_link=vless),
-            disable_web_page_preview=True,
-        )
+        karing_link, _has_sub = _ios_karing_link(cfg=cfg, email=email, vless_link=vless, client_id=client_id)
+        try:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=_ios_message(cfg=cfg, email=email, vless_link=vless, client_id=client_id),
+                reply_markup=_ios_keyboard(karing_link=karing_link),
+                disable_web_page_preview=True,
+            )
+        except Exception as e:
+            # Some Telegram clients reject custom schemes in URL buttons.
+            try:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=_ios_message(cfg=cfg, email=email, vless_link=vless, client_id=client_id),
+                    disable_web_page_preview=True,
+                )
+            except Exception:
+                pass
+            try:
+                await context.bot.send_message(
+                    chat_id=admin_id,
+                    text="\n".join(
+                        [
+                            f"Delivery warning: couldn't send user message with URL button ({display} {username} {user_id}).",
+                            f"- error: {e}",
+                            f"- karing: {karing_link}",
+                        ]
+                    ),
+                    disable_web_page_preview=True,
+                )
+            except Exception:
+                pass
         if out_file.exists():
             try:
                 await context.bot.send_document(chat_id=chat_id, document=out_file.read_bytes(), filename=out_file.name)

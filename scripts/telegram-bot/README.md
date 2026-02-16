@@ -53,6 +53,14 @@ XUI_TEMPLATE_VLESS_FILE=/etc/x-ui/template.vless
 BOT_OUTPUT_DIR=/var/lib/vpn-onboard
 BOT_LOCK_FILE=/var/lock/vpn-onboard-xui.lock
 BOT_PENDING_FILE=/var/lib/vpn-onboard/pending.json
+
+# Optional (recommended for iOS "auto import" reliability):
+# A subscription/config URL template that Karing can fetch over http/https.
+# Supported placeholders: {email}, {uuid}, {client_id}, {server}, {port}
+# Example:
+# XUI_SUB_URL_TEMPLATE=http://{server}:2096/sub/{email}
+# XUI_SUB_URL_TEMPLATE=https://sub.example.com/sub/{email}
+XUI_SUB_URL_TEMPLATE=
 ```
 
 5. Run (from repo root):
