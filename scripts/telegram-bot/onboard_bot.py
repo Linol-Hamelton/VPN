@@ -491,12 +491,10 @@ def _windows_clash_link(*, cfg: BotConfig, email: str, client_id: str, sub_id: s
 
 def _windows_keyboard(*, auto_url: str, sub_url: str) -> Optional[InlineKeyboardMarkup]:
     # Telegram inline buttons do NOT support custom schemes like clash://.
-    # Use an HTTP bridge for one-click, and keep subscription URL as fallback.
+    # Use an HTTP bridge for one-click.
     rows = []
     if auto_url:
         rows.append([InlineKeyboardButton("Open Clash Verge Auto Import", url=auto_url)])
-    if sub_url:
-        rows.append([InlineKeyboardButton("Open Subscription YAML (Fallback)", url=sub_url)])
     if not rows:
         return None
     return InlineKeyboardMarkup(rows)
@@ -507,23 +505,23 @@ def _windows_message(*, clash_link: str, clash_sub_url: str, has_auto_button: bo
         "Windows (Clash Verge Rev) setup is ready.",
         "",
         "1) Install Clash Verge Rev:",
-        "https://github.com/clash-verge-rev/clash-verge-rev/releases",
+        "https://github.com/clash-verge-rev/clash-verge-rev/releases/download/v2.4.5/Clash.Verge_2.4.5_x64-setup.exe",
         "",
     ]
 
     if clash_link:
         lines += [
-            "2) Auto-import (1 click): tap button `Open Clash Verge Auto Import`.",
-            "",
             "3) If button does not open app, paste this clash:// link into your browser:",
             clash_link,
             "",
-            "4) Fallback: Clash Verge Rev -> Profiles -> Import -> From URL, paste:",
+            "4) Инструкция: Кликни по ссылке ниже -> Открой Clash Verge -> Нажми на \"Профили\" -> Нажми на \"Новый\" -> Вставь ссылку в строку \"URL подписки\" -> Заполни строку название -> Нажми на сохранить",
             clash_sub_url,
+            "",
+            "Для включения VPN в области \"Настройка сети\" выбери \"Режим TUN\" и нажми на переключатель под кнопкой \"Режим TUN\", чтобы VPN включился.",
         ]
         if not has_auto_button:
-            lines.insert(6, "Auto-import button is not configured on server, using manual links only.")
-            lines.insert(7, "")
+            lines.insert(5, "Auto-import button is not configured on server, using manual links only.")
+            lines.insert(6, "")
     else:
         lines += [
             "2) Auto-import is not configured on server.",
@@ -642,6 +640,7 @@ async def cb_choose_os(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await q.edit_message_text("Unknown platform.")
         return
 
+    now_ts = int(time.time())
     req_id = _new_request_id()
     chat_id = q.message.chat_id if q.message else 0
     user = q.from_user
@@ -649,6 +648,19 @@ async def cb_choose_os(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     display = (f"{user.first_name or ''} {user.last_name or ''}".strip() if user else "") or username or str(uid)
 
     store = _pending_load(cfg.pending_file)
+    # Prevent duplicate pending requests from double taps.
+    for old in store.values():
+        if not isinstance(old, dict):
+            continue
+        if int(old.get("user_id") or 0) != uid:
+            continue
+        if str(old.get("requested_os") or "").strip().lower() != os_name:
+            continue
+        age = now_ts - int(old.get("ts") or 0)
+        if 0 <= age <= 900:
+            await q.edit_message_text("Request already sent to admin. Please wait for approval.")
+            return
+
     store[req_id] = {
         "request_id": req_id,
         "requested_os": os_name,
@@ -656,7 +668,7 @@ async def cb_choose_os(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "chat_id": chat_id,
         "username": username,
         "display": display,
-        "ts": int(time.time()),
+        "ts": now_ts,
     }
     _pending_save(cfg.pending_file, store)
 
@@ -730,6 +742,11 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     if action != "ok":
         return
+
+    # Consume the request immediately to prevent duplicate Approve taps
+    # from creating multiple clients.
+    store.pop(req_id, None)
+    _pending_save(cfg.pending_file, store)
 
     if requested_os not in ("ios", "windows"):
         store.pop(req_id, None)
@@ -813,13 +830,21 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     try:
-        rc, out, err, js = await asyncio.to_thread(
-            _run_create_ios_user,
-            cfg=cfg,
-            email=email,
-            template_vless_link=template_link,
-            out_file=out_file,
+        # Deduplicate by email: if client already exists, reuse it.
+        existing_id, existing_sub_id = _load_inbound_client_identity(
+            db_path=cfg.xui_db, inbound_port=cfg.xui_inbound_port, email=email
         )
+        if existing_id:
+            rc, out, err = 0, "existing client reused", ""
+            js = {"id": existing_id, "sub_id": existing_sub_id}
+        else:
+            rc, out, err, js = await asyncio.to_thread(
+                _run_create_ios_user,
+                cfg=cfg,
+                email=email,
+                template_vless_link=template_link,
+                out_file=out_file,
+            )
     finally:
         try:
             lock_f.close()
@@ -889,9 +914,6 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             except Exception:
                 pass
         return
-
-    store.pop(req_id, None)
-    _pending_save(cfg.pending_file, store)
 
     await q.edit_message_text(f"Approved: {display} {username} ({user_id}) client={client_id}")
     if chat_id:
