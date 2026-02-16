@@ -553,7 +553,9 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         vless = str(js.get("vless_link") or "").strip()
         client_id = str(js.get("id") or "").strip()
 
-    if rc != 0 or (not vless and "already exists" in (out + "\n" + err).lower()):
+    # If the script didn't return a vless:// link, rebuild it from DB using the template
+    # (pbk/sni/sid are non-secret and stable for the inbound).
+    if not vless:
         existing_uuid = _load_inbound_client_uuid(
             db_path=cfg.xui_db, inbound_port=cfg.xui_inbound_port, email=email
         )
