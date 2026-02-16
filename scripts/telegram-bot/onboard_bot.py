@@ -502,8 +502,20 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     try:
         template_link, template = _read_template_link()
-    except SystemExit as e:
-        await q.edit_message_text(f"Approve failed: template link not configured ({e}).")
+    except SystemExit:
+        file_path = os.getenv("XUI_TEMPLATE_VLESS_FILE", "").strip()
+        direct = os.getenv("XUI_TEMPLATE_VLESS_LINK", "").strip()
+        direct_state = "set" if direct else "-"
+        await q.edit_message_text(
+            "\n".join(
+                [
+                    "Approve failed: template vless is not configured/invalid.",
+                    f"- XUI_TEMPLATE_VLESS_FILE={file_path or '-'}",
+                    f"- XUI_TEMPLATE_VLESS_LINK={direct_state}",
+                    "Fix: set XUI_TEMPLATE_VLESS_FILE to a file that contains a single line starting with vless:// (export from x-ui Share).",
+                ]
+            )
+        )
         return
     except Exception as e:
         await q.edit_message_text(f"Approve failed: template link error: {e}")
