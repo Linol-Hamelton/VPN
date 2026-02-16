@@ -251,6 +251,7 @@ class BotConfig:
     lock_wait_secs: float
     create_timeout_secs: float
     xui_sub_url_template: str
+    send_client_pack: bool
 
 
 def _load_config() -> BotConfig:
@@ -272,6 +273,7 @@ def _load_config() -> BotConfig:
     lock_wait_secs = float(os.getenv("BOT_LOCK_WAIT_SECS", "30").strip() or "30")
     create_timeout_secs = float(os.getenv("BOT_CREATE_TIMEOUT_SECS", "90").strip() or "90")
     sub_url_template = os.getenv("XUI_SUB_URL_TEMPLATE", "").strip()
+    send_client_pack = (os.getenv("BOT_SEND_CLIENT_PACK", "0").strip().lower() in ("1", "true", "yes", "y", "on"))
     return BotConfig(
         token=token,
         admin_ids=admins,
@@ -285,6 +287,7 @@ def _load_config() -> BotConfig:
         lock_wait_secs=lock_wait_secs,
         create_timeout_secs=create_timeout_secs,
         xui_sub_url_template=sub_url_template,
+        send_client_pack=send_client_pack,
     )
 
 
@@ -411,11 +414,11 @@ def _ios_keyboard(*, karing_link: str) -> Optional[InlineKeyboardMarkup]:
 def _ios_message(*, cfg: BotConfig, email: str, vless_link: str, client_id: str) -> str:
     karing, has_sub = _ios_karing_link(cfg=cfg, email=email, vless_link=vless_link, client_id=client_id)
 
-    def code_block(s: str) -> str:
-        # Telegram Markdown: preformatted block is the most "copy-friendly".
-        return "```\n" + (s or "").strip() + "\n```"
+    def inline_code(s: str) -> str:
+        # Telegram Markdown (legacy): inline code works reliably and is easy to copy.
+        return "`" + (s or "").strip() + "`"
 
-    # Keep it minimal and copy-friendly.
+    # Keep it minimal and copy-friendly (no duplication).
     lines = [
         "iOS (Karing) подключение готово.",
         "",
@@ -426,7 +429,7 @@ def _ios_message(*, cfg: BotConfig, email: str, vless_link: str, client_id: str)
     if has_sub and karing:
         lines += [
             "2) Авто-импорт (если поддерживается на устройстве):",
-            code_block(karing),
+            inline_code(karing),
             "",
         ]
         step3 = 3
@@ -435,7 +438,7 @@ def _ios_message(*, cfg: BotConfig, email: str, vless_link: str, client_id: str)
 
     lines += [
         f"{step3}) Кликни на ссылку -> открой Karing -> Add config -> Paste from clipboard и вставь:",
-        code_block(vless_link),
+        inline_code(vless_link),
     ]
 
     return "\n".join(lines)
@@ -761,17 +764,7 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             except Exception:
                 pass
 
-        # Also send the raw vless link in a Markdown code block for easier copy.
-        try:
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text="```\n" + vless.strip() + "\n```",
-                disable_web_page_preview=True,
-                parse_mode="Markdown",
-            )
-        except Exception:
-            pass
-        if out_file.exists():
+        if cfg.send_client_pack and out_file.exists():
             try:
                 await context.bot.send_document(chat_id=chat_id, document=out_file.read_bytes(), filename=out_file.name)
             except Exception:

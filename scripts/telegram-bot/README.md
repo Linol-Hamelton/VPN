@@ -54,6 +54,9 @@ BOT_OUTPUT_DIR=/var/lib/vpn-onboard
 BOT_LOCK_FILE=/var/lock/vpn-onboard-xui.lock
 BOT_PENDING_FILE=/var/lib/vpn-onboard/pending.json
 
+# Optional: send client pack .txt as a Telegram file (default: 0)
+BOT_SEND_CLIENT_PACK=0
+
 # Optional (recommended for iOS "auto import" reliability):
 # A subscription/config URL template that Karing can fetch over http/https.
 # Supported placeholders: {email}, {uuid}, {client_id}, {server}, {port}
