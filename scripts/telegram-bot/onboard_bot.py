@@ -500,33 +500,31 @@ def _windows_keyboard(*, auto_url: str, sub_url: str) -> Optional[InlineKeyboard
     return InlineKeyboardMarkup(rows)
 
 
-def _windows_message(*, clash_link: str, clash_sub_url: str, has_auto_button: bool) -> str:
+def _windows_message(*, clash_link: str, vless_link: str) -> str:
+    def inline_code(s: str) -> str:
+        return "`" + (s or "").strip() + "`"
+
     lines = [
-        "Windows (Clash Verge Rev) setup is ready.",
+        "Установка для Windows, полная инструкция.",
         "",
-        "1) Install Clash Verge Rev:",
+        "1) Скачайте а затем установите Clash Verge по ссылке ниже:",
         "https://github.com/clash-verge-rev/clash-verge-rev/releases/download/v2.4.5/Clash.Verge_2.4.5_x64-setup.exe",
+        "",
+        "При установке не забудьте выбрать Английский язык, иначе потом будет сложно переключиться на русский.",
         "",
     ]
 
-    if clash_link:
-        lines += [
-            "3) If button does not open app, paste this clash:// link into your browser:",
-            clash_link,
-            "",
-            "4) Инструкция: Кликни по ссылке ниже -> Открой Clash Verge -> Нажми на \"Профили\" -> Нажми на \"Новый\" -> Вставь ссылку в строку \"URL подписки\" -> Заполни строку название -> Нажми на сохранить",
-            clash_sub_url,
-            "",
-            "Для включения VPN в области \"Настройка сети\" выбери \"Режим TUN\" и нажми на переключатель под кнопкой \"Режим TUN\", чтобы VPN включился.",
-        ]
-        if not has_auto_button:
-            lines.insert(5, "Auto-import button is not configured on server, using manual links only.")
-            lines.insert(6, "")
-    else:
-        lines += [
-            "2) Auto-import is not configured on server.",
-            "Ask admin to set XUI_CLASH_SUB_URL_TEMPLATE.",
-        ]
+    lines += [
+        "2) Автоматическое добавление профиля VPN в Clash Verge.",
+        "Нажмите на кнопку под сообщением или на эту ссылку, если через кнопку профиль не добавляется:",
+        inline_code(clash_link),
+        "",
+        "3) Если ничего не сработало, добавляем вручную:",
+        "Кликни по ссылке ниже -> Открой Clash Verge -> Нажми на \"Профили\" -> Нажми на \"Новый\" -> Вставь ссылку в строку \"URL подписки\" -> Заполни строку название -> Нажми на сохранить",
+        inline_code(vless_link),
+        "",
+        "Для включения VPN в области \"Настройка сети\" выбери \"Режим TUN\" и нажми на переключатель под кнопкой \"Режим TUN\", чтобы VPN включился.",
+    ]
 
     return "\n".join(lines)
 
@@ -927,14 +925,11 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             delivery_link, clash_sub_url, clash_auto_url = _windows_clash_link(
                 cfg=cfg, email=email, client_id=client_id, sub_id=sub_id
             )
-            delivery_text = _windows_message(
-                clash_link=delivery_link,
-                clash_sub_url=clash_sub_url,
-                has_auto_button=bool(clash_auto_url),
-            )
+            manual_link = vless or clash_sub_url
+            delivery_text = _windows_message(clash_link=delivery_link, vless_link=manual_link)
             delivery_keyboard = _windows_keyboard(auto_url=clash_auto_url, sub_url=clash_sub_url)
 
-        parse_mode = "Markdown" if requested_os == "ios" else None
+        parse_mode = "Markdown"
 
         try:
             await context.bot.send_message(
