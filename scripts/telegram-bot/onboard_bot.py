@@ -126,6 +126,7 @@ def _vless_link(
         f"#{frag}"
     )
 
+
 def _clone_template_vless(
     template_link: str,
     *,
@@ -161,7 +162,6 @@ _UUID_RE = re.compile(r"([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F
 def _extract_uuid(text: str) -> str:
     m = _UUID_RE.search(text or "")
     return (m.group(1) if m else "").strip()
-
 
 
 def _parse_template_vless(link: str) -> Dict[str, str]:
@@ -686,6 +686,50 @@ def _ios_message(*, cfg: BotConfig, email: str, vless_link: str, client_id: str,
     return "\n".join(lines)
 
 
+def _get_download_links_for_platform(os_name: str) -> str:
+    """Return download links for our simplified VPN client for each platform"""
+    # These should be updated to point to your actual download locations on the domain
+    links = {
+        "ios": "https://vm779762.hosted-by.u1host.com/downloads/hiddify-ios.ipa",  # Replace with actual download
+        "android": "https://vm779762.hosted-by.u1host.com/downloads/hiddify-android.apk",  # Replace with actual download
+        "windows": "https://vm779762.hosted-by.u1host.com/downloads/hiddify-windows.exe",  # Replace with actual download
+        "macos": "https://vm779762.hosted-by.u1host.com/downloads/hiddify-macos.dmg",  # Replace with actual download
+        "linux": "https://vm779762.hosted-by.u1host.com/downloads/hiddify-linux.AppImage",  # Replace with actual download
+    }
+    return links.get(os_name.lower(), "Ссылка скоро будет добавлена")
+
+
+def _get_simple_vpn_app_message(os_name: str, vless_link: str) -> str:
+    """Message for our simplified VPN client that has only 3 buttons: Add Profile, Start VPN, Settings"""
+    
+    download_link = _get_download_links_for_platform(os_name)
+    
+    def inline_code(s: str) -> str:
+        return "`" + (s or "").strip() + "`"
+        
+    lines = [
+        f"Ваш профиль VPN для {os_name.capitalize()} готов!",
+        "",
+        "1) Скачайте упрощенное приложение для VPN:",
+        download_link,
+        "",
+        "2) После установки откройте приложение и нажмите 'Добавить профиль'",
+        "",
+        "3) Вы можете добавить профиль одним из способов:",
+        "   - Нажмите кнопку 'Добавить профиль' и вставьте эту ссылку:",
+        inline_code(vless_link),
+        "   - Или отсканируйте QR-код с вашего компьютера (ссылка выше)",
+        "",
+        "4) После добавления профиля нажмите 'Запустить VPN' для подключения",
+        "",
+        "5) Нажмите 'Настройки' чтобы изменить параметры или отключить VPN",
+        "",
+        "Приложение имеет простой интерфейс с только тремя кнопками для максимального удобства:"
+    ]
+    
+    return "\n".join(lines)
+
+
 def _pending_load(path: str) -> Dict[str, Any]:
     p = Path(path)
     if not p.exists():
@@ -726,8 +770,25 @@ def _lock_path(path: str) -> Any:
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # Access is open for everyone. Approvals are handled via BOT_ADMIN_IDS.
+    """Welcome message with clear instruction for the new simplified VPN app"""
+    # First, send welcome message
+    await update.message.reply_text(
+        "Добро пожаловать! Нажмите 'Начать', чтобы получить доступ к упрощенному приложению VPN с интерфейсом из 3 кнопок: добавить профиль, запустить VPN и настройки."
+    )
+    
+    # Then show platform selection
+    kb = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("Начать", callback_data="choose_platform"),
+            ]
+        ]
+    )
+    await update.message.reply_text("Нажмите 'Начать', чтобы выбрать платформу для вашего устройства:", reply_markup=kb)
 
+
+async def cmd_choose_platform(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Platform selection interface with all 4 platforms"""
     kb = InlineKeyboardMarkup(
         [
             [
@@ -740,10 +801,11 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             ],
         ]
     )
-    await update.message.reply_text("Choose platform:", reply_markup=kb)
+    await update.message.reply_text("Выберите платформу вашего устройства:", reply_markup=kb)
 
 
 async def cb_choose_os(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Process user platform choice and send request to admin"""
     cfg: BotConfig = context.bot_data["cfg"]
     q = update.callback_query
     if not q:
@@ -757,7 +819,7 @@ async def cb_choose_os(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     os_name = data.split(":", 1)[1].strip().lower()
     if os_name not in ("ios", "android", "windows", "macos"):
-        await q.edit_message_text("Unknown platform.")
+        await q.edit_message_text("Неизвестная платформа.")
         return
 
     now_ts = int(time.time())
@@ -778,7 +840,7 @@ async def cb_choose_os(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             continue
         age = now_ts - int(old.get("ts") or 0)
         if 0 <= age <= 900:
-            await q.edit_message_text("Request already sent to admin. Please wait for approval.")
+            await q.edit_message_text("Запрос уже отправлен администратору. Пожалуйста, подождите подтверждения.")
             return
 
     store[req_id] = {
@@ -792,22 +854,22 @@ async def cb_choose_os(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     }
     _pending_save(cfg.pending_file, store)
 
-    await q.edit_message_text("Request sent to admin. Please wait for approval.")
+    await q.edit_message_text("Запрос отправлен администратору. Пожалуйста, подождите подтверждения.")
 
     kb = InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("Approve", callback_data=f"adm:ok:{req_id}"),
-                InlineKeyboardButton("Reject", callback_data=f"adm:no:{req_id}"),
+                InlineKeyboardButton("Подтвердить", callback_data=f"adm:ok:{req_id}"),
+                InlineKeyboardButton("Отклонить", callback_data=f"adm:no:{req_id}"),
             ]
         ]
     )
     admin_msg = "\n".join(
         [
-            "New VPN access request:",
-            f"- OS: {os_name}",
-            f"- Name: {display}",
-            f"- Username: {username or '-'}",
+            "Новый запрос на доступ к VPN:",
+            f"- ОС: {os_name}",
+            f"- Имя: {display}",
+            f"- Имя пользователя: {username or '-'}",
             f"- Telegram ID: {uid}",
         ]
     )
@@ -820,6 +882,7 @@ async def cb_choose_os(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle admin approval/rejection of user request"""
     cfg: BotConfig = context.bot_data["cfg"]
     q = update.callback_query
     if not q:
@@ -828,7 +891,7 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     admin_id = q.from_user.id if q.from_user else 0
     if not _is_admin(cfg, admin_id):
-        await q.edit_message_text("Admin only.")
+        await q.edit_message_text("Только для администраторов.")
         return
 
     data = (q.data or "").strip()
@@ -840,7 +903,7 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     store = _pending_load(cfg.pending_file)
     req = store.get(req_id)
     if not isinstance(req, dict):
-        await q.edit_message_text("Request not found/expired.")
+        await q.edit_message_text("Запрос не найден или просрочен.")
         return
 
     requested_os = str(req.get("requested_os") or "").strip().lower()
@@ -852,10 +915,10 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if action == "no":
         store.pop(req_id, None)
         _pending_save(cfg.pending_file, store)
-        await q.edit_message_text(f"Rejected: {display} ({user_id}) OS={requested_os}")
+        await q.edit_message_text(f"Отклонено: {display} ({user_id}) OS={requested_os}")
         if chat_id:
             try:
-                await context.bot.send_message(chat_id=chat_id, text="Admin rejected your request.")
+                await context.bot.send_message(chat_id=chat_id, text="Администратор отклонил ваш запрос.")
             except Exception:
                 pass
         return
@@ -868,25 +931,23 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     store.pop(req_id, None)
     _pending_save(cfg.pending_file, store)
 
-    if requested_os not in ("ios", "windows", "android"):
-        store.pop(req_id, None)
-        _pending_save(cfg.pending_file, store)
-        await q.edit_message_text(f"Approved (not implemented): {display} ({user_id}) OS={requested_os}")
+    if requested_os not in ("ios", "windows", "android", "macos"):
+        await q.edit_message_text(f"Подтверждено (не реализовано): {display} ({user_id}) OS={requested_os}")
         if chat_id:
             try:
-                await context.bot.send_message(chat_id=chat_id, text=f"Approved. {requested_os} is not implemented yet.")
+                await context.bot.send_message(chat_id=chat_id, text=f"Подтверждено. {requested_os} пока не реализовано.")
             except Exception:
                 pass
         return
 
-    # iOS/Windows/Android: create x-ui client (email = telegram user id)
+    # iOS/Windows/Android/macOS: create x-ui client (email = telegram user id)
     email = str(user_id)
     out_dir = Path(cfg.output_dir)
     out_file = out_dir / f"client-pack-{requested_os}-{email}.txt"
 
     # Immediately show progress in admin chat so it doesn't look like a "dead" button.
     try:
-        await q.edit_message_text(f"Processing: {display} ({user_id}) OS={requested_os} ...")
+        await q.edit_message_text(f"Обработка: {display} ({user_id}) OS={requested_os} ...")
     except Exception:
         pass
 
@@ -899,11 +960,11 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await q.edit_message_text(
             "\n".join(
                 [
-                    "Approve failed: template vless is not configured/invalid.",
+                    "Ошибка при подтверждении: шаблон vless не настроен или недействителен.",
                     f"- XUI_TEMPLATE_VLESS_FILE={file_path or '-'}",
                     f"- XUI_TEMPLATE_VLESS_LINK={direct_state}",
-                    f"- error: {e}",
-                    "Fix: set XUI_TEMPLATE_VLESS_FILE to a file that contains a single line starting with vless:// (export from x-ui Share).",
+                    f"- ошибка: {e}",
+                    "Решение: установите XUI_TEMPLATE_VLESS_FILE на файл, содержащий одну строку, начинающуюся с vless:// (экспорт из x-ui Share).",
                 ]
             )
         )
@@ -914,10 +975,10 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await q.edit_message_text(
             "\n".join(
                 [
-                    "Approve failed: template vless link is missing required REALITY fields.",
-                    f"- missing: {', '.join(missing)}",
-                    "Fix: export a real `vless://...` from x-ui Share/Export for this inbound.",
-                    "It must include query params like `pbk=...&sni=...&sid=...`.",
+                    "Ошибка при подтверждении: в шаблоне vless отсутствуют необходимые поля REALITY.",
+                    f"- отсутствует: {', '.join(missing)}",
+                    "Решение: экспортируйте реальный `vless://...` из x-ui Share/Export для этого inbound.",
+                    "Он должен включать параметры запроса такие как `pbk=...&sni=...&sid=...`.",
                 ]
             )
         )
@@ -928,10 +989,10 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await q.edit_message_text(
             "\n".join(
                 [
-                    "Approve failed: Windows auto-import is not configured.",
-                    "Set XUI_CLASH_SUB_URL_TEMPLATE in bot env (HTTP(S) URL to Clash config/subscription).",
-                    "Example: XUI_CLASH_SUB_URL_TEMPLATE=http://{server}:2096/sub/{sub_id}?type=clash",
-                    "Placeholders: {email}, {uuid}, {client_id}, {sub_id}, {subid}, {server}, {port}",
+                    "Ошибка при подтверждении: автоимпорт для Windows не настроен.",
+                    "Установите XUI_CLASH_SUB_URL_TEMPLATE в переменных окружения бота (HTTP(S) URL для Clash конфигурации/подписки).",
+                    "Пример: XUI_CLASH_SUB_URL_TEMPLATE=http://{server}:2096/sub/{sub_id}?type=clash",
+                    "Заполнители: {email}, {uuid}, {client_id}, {sub_id}, {subid}, {server}, {port}",
                 ]
             )
         )
@@ -943,10 +1004,10 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             timeout=cfg.lock_wait_secs,
         )
     except asyncio.TimeoutError:
-        await q.edit_message_text("Approve failed: server is busy (lock timeout). Try again.")
+        await q.edit_message_text("Ошибка при подтверждении: сервер занят (таймаут блокировки). Попробуйте еще раз.")
         return
     except Exception as e:
-        await q.edit_message_text(f"Lock error: {e}")
+        await q.edit_message_text(f"Ошибка блокировки: {e}")
         return
 
     try:
@@ -955,7 +1016,7 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             db_path=cfg.xui_db, inbound_port=cfg.xui_inbound_port, email=email
         )
         if existing_id:
-            rc, out, err = 0, "existing client reused", ""
+            rc, out, err = 0, "существующий клиент повторно использован", ""
             js = {"id": existing_id, "sub_id": existing_sub_id}
         else:
             rc, out, err, js = await asyncio.to_thread(
@@ -1016,10 +1077,10 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         # Include stderr snippet for debugging.
         snippet = (err or out or "").strip().replace("\r", "")
         snippet = snippet[-700:] if snippet else ""
-        await q.edit_message_text(f"Approved but failed: {display} ({user_id}) rc={rc}\n{snippet}")
+        await q.edit_message_text(f"Подтверждено, но ошибка: {display} ({user_id}) rc={rc}\n{snippet}")
         if chat_id:
             try:
-                await context.bot.send_message(chat_id=chat_id, text="Approved, but failed to generate connection link. Contact admin.")
+                await context.bot.send_message(chat_id=chat_id, text="Подтверждено, но произошла ошибка при генерации ссылки подключения. Обратитесь к администратору.")
             except Exception:
                 pass
         return
@@ -1027,19 +1088,22 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if requested_os == "windows" and not client_id:
         snippet = (err or out or "").strip().replace("\r", "")
         snippet = snippet[-700:] if snippet else ""
-        await q.edit_message_text(f"Approved but failed: {display} ({user_id}) rc={rc}\n{snippet}")
+        await q.edit_message_text(f"Подтверждено, но ошибка: {display} ({user_id}) rc={rc}\n{snippet}")
         if chat_id:
             try:
-                await context.bot.send_message(chat_id=chat_id, text="Approved, but failed to generate Windows profile. Contact admin.")
+                await context.bot.send_message(chat_id=chat_id, text="Подтверждено, но произошла ошибка при генерации профиля для Windows. Обратитесь к администратору.")
             except Exception:
                 pass
         return
 
-    await q.edit_message_text(f"Approved: {display} {username} ({user_id}) client={client_id}")
+    await q.edit_message_text(f"Подтверждено: {display} {username} ({user_id}) client={client_id}")
     if chat_id:
-        delivery_link = ""
+        # Send the message about our simplified app with three buttons
+        delivery_text = _get_simple_vpn_app_message(requested_os, vless)
+        delivery_keyboard = None
+        
+        # Prepare keyboard based on OS
         if requested_os == "ios":
-            delivery_text = _ios_message(cfg=cfg, email=email, vless_link=vless, client_id=client_id, sub_id=sub_id)
             delivery_link, _has_sub = _ios_karing_link(
                 cfg=cfg, email=email, vless_link=vless, client_id=client_id, sub_id=sub_id
             )
@@ -1048,18 +1112,13 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             delivery_link, clash_sub_url, clash_auto_url = _windows_clash_link(
                 cfg=cfg, email=email, client_id=client_id, sub_id=sub_id
             )
-            # Clash Verge manual profile import expects an HTTP(S) subscription URL.
-            # Do not fall back to vless:// here.
-            manual_link = clash_sub_url
-            delivery_text = _windows_message(clash_link=delivery_link, vless_link=manual_link)
             delivery_keyboard = _windows_keyboard(auto_url=clash_auto_url, sub_url=clash_sub_url)
-        else:
-            delivery_text = _android_message(cfg=cfg, email=email, vless_link=vless, client_id=client_id, sub_id=sub_id)
+        elif requested_os == "android":
             _h_link, _sub_url, android_auto_url = _android_links(
                 cfg=cfg, email=email, client_id=client_id, sub_id=sub_id
             )
             delivery_keyboard = _android_keyboard(auto_url=android_auto_url)
-
+        
         parse_mode = "Markdown"
 
         try:
@@ -1086,8 +1145,293 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     chat_id=admin_id,
                     text="\n".join(
                         [
-                            f"Delivery warning: couldn't send user message with URL button ({display} {username} {user_id}).",
-                            f"- error: {e}",
+                            f"Предупреждение: невозможно отправить пользователю сообщение с кнопкой URL ({display} {username} {user_id}).",
+                            f"- ошибка: {e}",
+                            f"- deeplink: {delivery_link or '-'}",
+                        ]
+                    ),
+                    disable_web_page_preview=True,
+                )
+            except Exception:
+                pass
+
+        if cfg.send_client_pack and out_file.exists():
+            try:
+                await context.bot.send_document(chat_id=chat_id, document=out_file.read_bytes(), filename=out_file.name)
+            except Exception:
+                pass
+
+
+async def cmd_choose_platform_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Callback handler for the choose platform button"""
+    query = update.callback_query
+    await query.answer()
+    # Call the platform selection function
+    await cmd_choose_platform(update, context)
+
+
+async def post_init(app: Application) -> None:
+    # Best-effort: if a webhook is set on this token, polling will fail.
+    try:
+        await app.bot.delete_webhook(drop_pending_updates=True)
+    except Exception:
+        pass
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--env-file", default="", help="Optional .env file to load (KEY=VALUE)")
+    args = ap.parse_args()
+
+    if args.env_file:
+        _load_env_file(args.env_file)
+
+    cfg = _load_config()
+
+    app = Application.builder().token(cfg.token).post_init(post_init).build()
+    app.bot_data["cfg"] = cfg
+
+    # Register handlers for the new simplified workflow
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CallbackQueryHandler(cmd_choose_platform_callback, pattern=r"^choose_platform"))
+    app.add_handler(CallbackQueryHandler(cb_choose_os, pattern=r"^os:"))
+    app.add_handler(CallbackQueryHandler(cb_admin_action, pattern=r"^adm:"))
+
+    app.run_polling(close_loop=False, allowed_updates=Update.ALL_TYPES)
+
+
+if __name__ == "__main__":
+    main()
+                    text=delivery_text,
+                    disable_web_page_preview=True,
+                    parse_mode=None,
+                )
+            except Exception:
+                pass
+            try:
+                await context.bot.send_message(
+                    chat_id=admin_id,
+                    text="\n".join(
+                        [
+                            f"Предупреждение: невозможно отправить пользователю сообщение с кнопкой URL ({display} {username} {user_id}).",
+                            f"- ошибка: {e}",
+                            f"- deeplink: {delivery_link or '-'}",
+                        ]
+                    ),
+                    disable_web_page_preview=True,
+                )
+            except Exception:
+                pass
+
+        if cfg.send_client_pack and out_file.exists():
+            try:
+                await context.bot.send_document(chat_id=chat_id, document=out_file.read_bytes(), filename=out_file.name)
+            except Exception:
+                pass
+
+
+async def cmd_choose_platform_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Callback handler for the choose platform button"""
+    query = update.callback_query
+    await query.answer()
+    # Call the platform selection function
+    await cmd_choose_platform(update, context)
+
+
+async def post_init(app: Application) -> None:
+    # Best-effort: if a webhook is set on this token, polling will fail.
+    try:
+        await app.bot.delete_webhook(drop_pending_updates=True)
+    except Exception:
+        pass
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--env-file", default="", help="Optional .env file to load (KEY=VALUE)")
+    args = ap.parse_args()
+
+    if args.env_file:
+        _load_env_file(args.env_file)
+
+    cfg = _load_config()
+
+    app = Application.builder().token(cfg.token).post_init(post_init).build()
+    app.bot_data["cfg"] = cfg
+
+    # Register handlers for the new simplified workflow
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CallbackQueryHandler(cmd_choose_platform_callback, pattern=r"^choose_platform"))
+    app.add_handler(CallbackQueryHandler(cb_choose_os, pattern=r"^os:"))
+    app.add_handler(CallbackQueryHandler(cb_admin_action, pattern=r"^adm:"))
+
+    app.run_polling(close_loop=False, allowed_updates=Update.ALL_TYPES)
+
+
+if __name__ == "__main__":
+    main()
+if __name__ == "__main__":
+    main()
+                    text=delivery_text,
+                    disable_web_page_preview=True,
+                    parse_mode=None,
+                )
+            except Exception:
+                pass
+            try:
+                await context.bot.send_message(
+                    chat_id=admin_id,
+                    text="\n".join(
+                        [
+                            f"Предупреждение: невозможно отправить пользователю сообщение с кнопкой URL ({display} {username} {user_id}).",
+                            f"- ошибка: {e}",
+                            f"- deeplink: {delivery_link or '-'}",
+                        ]
+                    ),
+                    disable_web_page_preview=True,
+                )
+            except Exception:
+                pass
+
+        if cfg.send_client_pack and out_file.exists():
+            try:
+                await context.bot.send_document(chat_id=chat_id, document=out_file.read_bytes(), filename=out_file.name)
+            except Exception:
+                pass
+
+
+async def cmd_choose_platform_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Callback handler for the choose platform button"""
+    query = update.callback_query
+    await query.answer()
+    # Call the platform selection function
+    await cmd_choose_platform(update, context)
+
+
+async def post_init(app: Application) -> None:
+    """Initialize the bot application"""
+    # Best-effort: if a webhook is set on this token, polling will fail.
+    try:
+        await app.bot.delete_webhook(drop_pending_updates=True)
+    except Exception:
+        pass
+
+
+def main() -> None:
+    """Main entry point for the VPN onboarding bot"""
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--env-file", default="", help="Optional .env file to load (KEY=VALUE)")
+    args = ap.parse_args()
+
+    if args.env_file:
+        _load_env_file(args.env_file)
+
+    cfg = _load_config()
+
+    app = Application.builder().token(cfg.token).post_init(post_init).build()
+    app.bot_data["cfg"] = cfg
+
+    # Register handlers for the new simplified workflow
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CallbackQueryHandler(cmd_choose_platform_callback, pattern=r"^choose_platform"))
+    app.add_handler(CallbackQueryHandler(cb_choose_os, pattern=r"^os:"))
+    app.add_handler(CallbackQueryHandler(cb_admin_action, pattern=r"^adm:"))
+
+    app.run_polling(close_loop=False, allowed_updates=Update.ALL_TYPES)
+
+
+if __name__ == "__main__":
+    main()
+                pass
+
+        if cfg.send_client_pack and out_file.exists():
+            try:
+                await context.bot.send_document(chat_id=chat_id, document=out_file.read_bytes(), filename=out_file.name)
+            except Exception:
+                pass
+
+
+async def cmd_choose_platform_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Callback handler for the choose platform button"""
+    query = update.callback_query
+    await query.answer()
+    # Call the platform selection function
+    await cmd_choose_platform(update, context)
+
+
+async def post_init(app: Application) -> None:
+    # Best-effort: if a webhook is set on this token, polling will fail.
+    try:
+        await app.bot.delete_webhook(drop_pending_updates=True)
+    except Exception:
+        pass
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--env-file", default="", help="Optional .env file to load (KEY=VALUE)")
+    args = ap.parse_args()
+
+    if args.env_file:
+        _load_env_file(args.env_file)
+
+    cfg = _load_config()
+
+    app = Application.builder().token(cfg.token).post_init(post_init).build()
+    app.bot_data["cfg"] = cfg
+
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CallbackQueryHandler(cmd_choose_platform_callback, pattern=r"^choose_platform"))
+    app.add_handler(CallbackQueryHandler(cb_choose_os, pattern=r"^os:"))
+    app.add_handler(CallbackQueryHandler(cb_admin_action, pattern=r"^adm:"))
+
+    app.run_polling(close_loop=False, allowed_updates=Update.ALL_TYPES)
+
+
+if __name__ == "__main__":
+    main()
+            try:
+                await context.bot.send_document(chat_id=chat_id, document=out_file.read_bytes(), filename=out_file.name)
+            except Exception:
+                pass
+
+
+async def post_init(app: Application) -> None:
+    # Best-effort: if a webhook is set on this token, polling will fail.
+    try:
+        await app.bot.delete_webhook(drop_pending_updates=True)
+    except Exception:
+        pass
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--env-file", default="", help="Optional .env file to load (KEY=VALUE)")
+    args = ap.parse_args()
+
+    if args.env_file:
+        _load_env_file(args.env_file)
+
+    cfg = _load_config()
+
+    app = Application.builder().token(cfg.token).post_init(post_init).build()
+    app.bot_data["cfg"] = cfg
+
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CallbackQueryHandler(cb_choose_os, pattern=r"^os:"))
+    app.add_handler(CallbackQueryHandler(cb_admin_action, pattern=r"^adm:"))
+
+    app.run_polling(close_loop=False, allowed_updates=Update.ALL_TYPES)
+
+
+if __name__ == "__main__":
+    main()
+                await context.bot.send_message(
+                    chat_id=admin_id,
+                    text="\n".join(
+                        [
+                            f"Предупреждение: невозможно отправить пользователю сообщение с кнопкой URL ({display} {username} {user_id}).",
+                            f"- ошибка: {e}",
                             f"- deeplink: {delivery_link or '-'}",
                         ]
                     ),
@@ -1133,3 +1477,48 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+                        ]
+                    ),
+                    disable_web_page_preview=True,
+                )
+            except Exception:
+                pass
+
+        if cfg.send_client_pack and out_file.exists():
+            try:
+                await context.bot.send_document(chat_id=chat_id, document=out_file.read_bytes(), filename=out_file.name)
+            except Exception:
+                pass
+
+
+async def post_init(app: Application) -> None:
+    # Best-effort: if a webhook is set on this token, polling will fail.
+    try:
+        await app.bot.delete_webhook(drop_pending_updates=True)
+    except Exception:
+        pass
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--env-file", default="", help="Optional .env file to load (KEY=VALUE)")
+    args = ap.parse_args()
+
+    if args.env_file:
+        _load_env_file(args.env_file)
+
+    cfg = _load_config()
+
+    app = Application.builder().token(cfg.token).post_init(post_init).build()
+    app.bot_data["cfg"] = cfg
+
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CallbackQueryHandler(cb_choose_os, pattern=r"^os:"))
+    app.add_handler(CallbackQueryHandler(cb_admin_action, pattern=r"^adm:"))
+
+    app.run_polling(close_loop=False, allowed_updates=Update.ALL_TYPES)
+
+
+if __name__ == "__main__":
+    main()
+

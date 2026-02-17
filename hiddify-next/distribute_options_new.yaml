@@ -1,0 +1,112 @@
+output: dist/
+releases:
+  - name: prod
+    jobs:
+      - name: release-windows-exe
+        package:
+          platform: windows
+          target: exe
+
+      - name: release-windows-msix
+        package:
+          platform: windows
+          target: msix
+
+      - name: release-macos-dmg
+        package:
+          platform: macos
+          target: dmg
+
+      - name: release-macos-pkg
+        package:
+          platform: macos
+          target: pkg
+
+      - name: release-linux-deb
+        package:
+          platform: linux
+          target: deb
+
+      - name: release-linux-rpm
+        package:
+          platform: linux
+          target: rpm
+
+      - name: release-linux-appimage
+        package:
+          platform: linux
+          target: appimage
+
+      - name: release-android-apk
+        package:
+          platform: android
+          target: apk
+          build_args:
+            target-platform: android-arm,android-arm64,android-x64
+
+      - name: release-android-bundle
+        package:
+          platform: android
+          target: aab
+          build_args:
+            target-platform: android-arm,android-arm64,android-x64
+
+      - name: release-ios-ipa
+        package:
+          platform: ios
+          target: ipareleases:
+  - name: prod
+    jobs:
+      - name: release-windows-exe
+        package:
+          platform: windows
+          target: exe
+
+      - name: release-windows-msix
+        package:
+          platform: windows
+          target: msix
+
+      - name: release-macos-dmg
+        package:
+          platform: macos
+          target: dmg
+
+      - name: release-macos-pkg
+        package:
+          platform: macos
+          target: pkg
+
+      - name: release-linux-deb
+        package:
+          platform: linux
+          target: deb
+
+      - name: release-linux-rpm
+        package:
+          platform: linux
+          target: rpm
+
+      - name: release-linux-appimage
+        package:
+          platform: linux
+          target: appimage
+
+      - name: release-android-apk
+        package:
+          platform: android
+          target: apk
+          build_args:
+            target-platform: android-arm,android-arm64,android-x64
+
+      - name: release-android-bundle
+        package:
+          platform: android
+          target: aab
+          build_args:
+            target-platform: android-arm,android-arm64,android-x64
+
+      - name: release-ios-ipa
+        package:
+          platform: ios
+          target: ipa
