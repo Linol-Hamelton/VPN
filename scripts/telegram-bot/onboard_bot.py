@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+"""VPN Client Onboarding Telegram Bot
+
+This bot helps users connect to a VPN service by generating platform-specific
+configuration instructions and providing download links for the simplified app.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -31,6 +37,7 @@ def _fail(msg: str, code: int = 2) -> None:
 
 
 def _load_env_file(path: str) -> None:
+    """Load KEY=VALUE pairs from a file."""
     p = Path(path)
     if not p.exists():
         return
@@ -67,6 +74,7 @@ def _parse_int(name: str, default: Optional[int] = None) -> int:
 
 
 def _parse_allowed_ids(s: str) -> Set[int]:
+    """Parse comma-separated integers (usually Telegram user IDs)."""
     out: Set[int] = set()
     for part in (s or "").split(","):
         part = part.strip()
@@ -689,6 +697,7 @@ def _ios_message(*, cfg: BotConfig, email: str, vless_link: str, client_id: str,
 def _get_download_links_for_platform(os_name: str) -> str:
     """Return download links for our simplified VPN client for each platform"""
     # These should be updated to point to your actual download locations on the domain
+    # Using the user's domain vm779762.hosted-by.u1host.com with IP 144.31.227.53
     links = {
         "ios": "https://vm779762.hosted-by.u1host.com/downloads/hiddify-ios.ipa",  # Replace with actual download
         "android": "https://vm779762.hosted-by.u1host.com/downloads/hiddify-android.apk",  # Replace with actual download
@@ -801,7 +810,11 @@ async def cmd_choose_platform(update: Update, context: ContextTypes.DEFAULT_TYPE
             ],
         ]
     )
-    await update.message.reply_text("Выберите платформу вашего устройства:", reply_markup=kb)
+    if update.callback_query and update.callback_query.message:
+        await update.callback_query.edit_message_text("Выберите платформу вашего устройства:", reply_markup=kb)
+        return
+    if update.message:
+        await update.message.reply_text("Выберите платформу вашего устройства:", reply_markup=kb)
 
 
 async def cb_choose_os(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1171,144 +1184,6 @@ async def cmd_choose_platform_callback(update: Update, context: ContextTypes.DEF
 
 
 async def post_init(app: Application) -> None:
-    # Best-effort: if a webhook is set on this token, polling will fail.
-    try:
-        await app.bot.delete_webhook(drop_pending_updates=True)
-    except Exception:
-        pass
-
-
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--env-file", default="", help="Optional .env file to load (KEY=VALUE)")
-    args = ap.parse_args()
-
-    if args.env_file:
-        _load_env_file(args.env_file)
-
-    cfg = _load_config()
-
-    app = Application.builder().token(cfg.token).post_init(post_init).build()
-    app.bot_data["cfg"] = cfg
-
-    # Register handlers for the new simplified workflow
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CallbackQueryHandler(cmd_choose_platform_callback, pattern=r"^choose_platform"))
-    app.add_handler(CallbackQueryHandler(cb_choose_os, pattern=r"^os:"))
-    app.add_handler(CallbackQueryHandler(cb_admin_action, pattern=r"^adm:"))
-
-    app.run_polling(close_loop=False, allowed_updates=Update.ALL_TYPES)
-
-
-if __name__ == "__main__":
-    main()
-                    text=delivery_text,
-                    disable_web_page_preview=True,
-                    parse_mode=None,
-                )
-            except Exception:
-                pass
-            try:
-                await context.bot.send_message(
-                    chat_id=admin_id,
-                    text="\n".join(
-                        [
-                            f"Предупреждение: невозможно отправить пользователю сообщение с кнопкой URL ({display} {username} {user_id}).",
-                            f"- ошибка: {e}",
-                            f"- deeplink: {delivery_link or '-'}",
-                        ]
-                    ),
-                    disable_web_page_preview=True,
-                )
-            except Exception:
-                pass
-
-        if cfg.send_client_pack and out_file.exists():
-            try:
-                await context.bot.send_document(chat_id=chat_id, document=out_file.read_bytes(), filename=out_file.name)
-            except Exception:
-                pass
-
-
-async def cmd_choose_platform_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Callback handler for the choose platform button"""
-    query = update.callback_query
-    await query.answer()
-    # Call the platform selection function
-    await cmd_choose_platform(update, context)
-
-
-async def post_init(app: Application) -> None:
-    # Best-effort: if a webhook is set on this token, polling will fail.
-    try:
-        await app.bot.delete_webhook(drop_pending_updates=True)
-    except Exception:
-        pass
-
-
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--env-file", default="", help="Optional .env file to load (KEY=VALUE)")
-    args = ap.parse_args()
-
-    if args.env_file:
-        _load_env_file(args.env_file)
-
-    cfg = _load_config()
-
-    app = Application.builder().token(cfg.token).post_init(post_init).build()
-    app.bot_data["cfg"] = cfg
-
-    # Register handlers for the new simplified workflow
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CallbackQueryHandler(cmd_choose_platform_callback, pattern=r"^choose_platform"))
-    app.add_handler(CallbackQueryHandler(cb_choose_os, pattern=r"^os:"))
-    app.add_handler(CallbackQueryHandler(cb_admin_action, pattern=r"^adm:"))
-
-    app.run_polling(close_loop=False, allowed_updates=Update.ALL_TYPES)
-
-
-if __name__ == "__main__":
-    main()
-if __name__ == "__main__":
-    main()
-                    text=delivery_text,
-                    disable_web_page_preview=True,
-                    parse_mode=None,
-                )
-            except Exception:
-                pass
-            try:
-                await context.bot.send_message(
-                    chat_id=admin_id,
-                    text="\n".join(
-                        [
-                            f"Предупреждение: невозможно отправить пользователю сообщение с кнопкой URL ({display} {username} {user_id}).",
-                            f"- ошибка: {e}",
-                            f"- deeplink: {delivery_link or '-'}",
-                        ]
-                    ),
-                    disable_web_page_preview=True,
-                )
-            except Exception:
-                pass
-
-        if cfg.send_client_pack and out_file.exists():
-            try:
-                await context.bot.send_document(chat_id=chat_id, document=out_file.read_bytes(), filename=out_file.name)
-            except Exception:
-                pass
-
-
-async def cmd_choose_platform_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Callback handler for the choose platform button"""
-    query = update.callback_query
-    await query.answer()
-    # Call the platform selection function
-    await cmd_choose_platform(update, context)
-
-
-async def post_init(app: Application) -> None:
     """Initialize the bot application"""
     # Best-effort: if a webhook is set on this token, polling will fail.
     try:
@@ -1342,183 +1217,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-                pass
-
-        if cfg.send_client_pack and out_file.exists():
-            try:
-                await context.bot.send_document(chat_id=chat_id, document=out_file.read_bytes(), filename=out_file.name)
-            except Exception:
-                pass
-
-
-async def cmd_choose_platform_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Callback handler for the choose platform button"""
-    query = update.callback_query
-    await query.answer()
-    # Call the platform selection function
-    await cmd_choose_platform(update, context)
-
-
-async def post_init(app: Application) -> None:
-    # Best-effort: if a webhook is set on this token, polling will fail.
-    try:
-        await app.bot.delete_webhook(drop_pending_updates=True)
-    except Exception:
-        pass
-
-
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--env-file", default="", help="Optional .env file to load (KEY=VALUE)")
-    args = ap.parse_args()
-
-    if args.env_file:
-        _load_env_file(args.env_file)
-
-    cfg = _load_config()
-
-    app = Application.builder().token(cfg.token).post_init(post_init).build()
-    app.bot_data["cfg"] = cfg
-
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CallbackQueryHandler(cmd_choose_platform_callback, pattern=r"^choose_platform"))
-    app.add_handler(CallbackQueryHandler(cb_choose_os, pattern=r"^os:"))
-    app.add_handler(CallbackQueryHandler(cb_admin_action, pattern=r"^adm:"))
-
-    app.run_polling(close_loop=False, allowed_updates=Update.ALL_TYPES)
-
-
-if __name__ == "__main__":
-    main()
-            try:
-                await context.bot.send_document(chat_id=chat_id, document=out_file.read_bytes(), filename=out_file.name)
-            except Exception:
-                pass
-
-
-async def post_init(app: Application) -> None:
-    # Best-effort: if a webhook is set on this token, polling will fail.
-    try:
-        await app.bot.delete_webhook(drop_pending_updates=True)
-    except Exception:
-        pass
-
-
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--env-file", default="", help="Optional .env file to load (KEY=VALUE)")
-    args = ap.parse_args()
-
-    if args.env_file:
-        _load_env_file(args.env_file)
-
-    cfg = _load_config()
-
-    app = Application.builder().token(cfg.token).post_init(post_init).build()
-    app.bot_data["cfg"] = cfg
-
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CallbackQueryHandler(cb_choose_os, pattern=r"^os:"))
-    app.add_handler(CallbackQueryHandler(cb_admin_action, pattern=r"^adm:"))
-
-    app.run_polling(close_loop=False, allowed_updates=Update.ALL_TYPES)
-
-
-if __name__ == "__main__":
-    main()
-                await context.bot.send_message(
-                    chat_id=admin_id,
-                    text="\n".join(
-                        [
-                            f"Предупреждение: невозможно отправить пользователю сообщение с кнопкой URL ({display} {username} {user_id}).",
-                            f"- ошибка: {e}",
-                            f"- deeplink: {delivery_link or '-'}",
-                        ]
-                    ),
-                    disable_web_page_preview=True,
-                )
-            except Exception:
-                pass
-
-        if cfg.send_client_pack and out_file.exists():
-            try:
-                await context.bot.send_document(chat_id=chat_id, document=out_file.read_bytes(), filename=out_file.name)
-            except Exception:
-                pass
-
-
-async def post_init(app: Application) -> None:
-    # Best-effort: if a webhook is set on this token, polling will fail.
-    try:
-        await app.bot.delete_webhook(drop_pending_updates=True)
-    except Exception:
-        pass
-
-
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--env-file", default="", help="Optional .env file to load (KEY=VALUE)")
-    args = ap.parse_args()
-
-    if args.env_file:
-        _load_env_file(args.env_file)
-
-    cfg = _load_config()
-
-    app = Application.builder().token(cfg.token).post_init(post_init).build()
-    app.bot_data["cfg"] = cfg
-
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CallbackQueryHandler(cb_choose_os, pattern=r"^os:"))
-    app.add_handler(CallbackQueryHandler(cb_admin_action, pattern=r"^adm:"))
-
-    app.run_polling(close_loop=False, allowed_updates=Update.ALL_TYPES)
-
-
-if __name__ == "__main__":
-    main()
-                        ]
-                    ),
-                    disable_web_page_preview=True,
-                )
-            except Exception:
-                pass
-
-        if cfg.send_client_pack and out_file.exists():
-            try:
-                await context.bot.send_document(chat_id=chat_id, document=out_file.read_bytes(), filename=out_file.name)
-            except Exception:
-                pass
-
-
-async def post_init(app: Application) -> None:
-    # Best-effort: if a webhook is set on this token, polling will fail.
-    try:
-        await app.bot.delete_webhook(drop_pending_updates=True)
-    except Exception:
-        pass
-
-
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--env-file", default="", help="Optional .env file to load (KEY=VALUE)")
-    args = ap.parse_args()
-
-    if args.env_file:
-        _load_env_file(args.env_file)
-
-    cfg = _load_config()
-
-    app = Application.builder().token(cfg.token).post_init(post_init).build()
-    app.bot_data["cfg"] = cfg
-
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CallbackQueryHandler(cb_choose_os, pattern=r"^os:"))
-    app.add_handler(CallbackQueryHandler(cb_admin_action, pattern=r"^adm:"))
-
-    app.run_polling(close_loop=False, allowed_updates=Update.ALL_TYPES)
-
-
-if __name__ == "__main__":
-    main()
-
