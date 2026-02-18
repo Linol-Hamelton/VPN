@@ -112,16 +112,21 @@ jobs:
       - name: Prepare
         run: make windows-prepare
 
-      - name: Build EXE + MSIX
-        run: make windows-release
+      - name: Build Windows
+        run: flutter build windows --release --target lib/main_prod.dart --dart-define sentry_dsn=
 
       - name: Collect artifacts
-        shell: bash
+        shell: pwsh
         run: |
-          mkdir -p ../out
-          find dist -name "*.exe"  | head -1 | xargs -I{} cp {} ../out/hiddify-windows-setup-x64.exe  2>/dev/null || true
-          find dist -name "*.msix" | head -1 | xargs -I{} cp {} ../out/hiddify-windows-x64.msix       2>/dev/null || true
-          ls -lh ../out/ || true
+          New-Item -ItemType Directory -Force -Path "..\out" | Out-Null
+          $src = "build\windows\x64\runner\Release"
+          if (Test-Path $src) {
+            Compress-Archive -Path "$src\*" -DestinationPath "..\out\hiddify-windows-x64.zip" -Force
+            Write-Host "Zipped: $((Get-Item '..\out\hiddify-windows-x64.zip').Length) bytes"
+          } else {
+            Write-Warning "Build output not found at $src"
+            Get-ChildItem build -Recurse -Filter "*.exe" | Select-Object FullName
+          }
 
       - uses: actions/upload-artifact@v4
         with:
