@@ -57,10 +57,6 @@ jobs:
           add-to-path: true
           link-to-sdk: true
 
-      - uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: '7.5.1'
-
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.24.0'
@@ -136,7 +132,7 @@ jobs:
   # ─── macOS DMG (unsigned — no cert required) ──────────────────────────────
   build-macos:
     name: macOS DMG
-    runs-on: macos-13
+    runs-on: macos-14
     continue-on-error: true          # don't block release if macOS fails
     env:
       CHANNEL: ${{ github.event.inputs.channel || 'prod' }}
