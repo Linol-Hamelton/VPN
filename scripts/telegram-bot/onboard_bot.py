@@ -511,10 +511,8 @@ def _ios_karing_link(*, cfg: BotConfig, email: str, vless_link: str, client_id: 
 
 
 def _ios_keyboard(*, karing_link: str) -> Optional[InlineKeyboardMarkup]:
-    if not karing_link:
-        return None
-    # A URL button is the most reliable way to present (and tap) a link in Telegram.
-    return InlineKeyboardMarkup([[InlineKeyboardButton("Open Karing (Auto Import)", url=karing_link)]])
+    # IPA delivered via send_document — no extra keyboard button needed.
+    return None
 
 
 def _windows_clash_link(*, cfg: BotConfig, email: str, client_id: str, sub_id: str) -> Tuple[str, str, str]:
@@ -552,25 +550,51 @@ def _windows_message(*, clash_link: str, vless_link: str) -> str:
         return "`" + (s or "").strip() + "`"
 
     lines = [
-        "Установка для Windows, полная инструкция.",
+        "Windows — подключение готово.",
         "",
-        "1) Скачайте а затем установите Clash Verge по ссылке ниже:",
-        "https://github.com/clash-verge-rev/clash-verge-rev/releases/download/v2.4.5/Clash.Verge_2.4.5_x64-setup.exe",
-        "",
-        "При установке не забудьте выбрать Английский язык, иначе потом будет сложно переключиться на русский.",
+        "1) Установи приложение VPN (файл .exe будет отправлен ниже).",
+        "   Запусти установщик и следуй инструкциям.",
         "",
     ]
 
-    lines += [
-        "2) Автоматическое добавление профиля VPN в Clash Verge.",
-        "Нажмите на кнопку под сообщением или на эту ссылку, если через кнопку профиль не добавляется:",
-        inline_code(clash_link),
+    if clash_link:
+        lines += [
+            "2) Авто-импорт профиля VPN (нажми кнопку под сообщением):",
+            inline_code(clash_link),
+            "",
+            "3) Ручной импорт (если авто не сработал):",
+            "   Открой приложение → '+' → вставь ссылку:",
+            inline_code(vless_link),
+        ]
+    else:
+        lines += [
+            "2) Добавь профиль VPN:",
+            "   Открой приложение → нажми '+' → вставь ссылку:",
+            inline_code(vless_link),
+            "",
+            "3) Нажми 'Подключиться' — готово.",
+        ]
+
+    return "\n".join(lines)
+
+
+def _macos_message(*, vless_link: str) -> str:
+    def inline_code(s: str) -> str:
+        return "`" + (s or "").strip() + "`"
+
+    lines = [
+        "macOS — подключение готово.",
         "",
-        "3) Если ничего не сработало, добавляем вручную:",
-        "Кликни по ссылке ниже -> Открой Clash Verge -> Нажми на \"Профили\" -> Нажми на \"Новый\" -> Вставь ссылку в строку \"URL подписки\" -> Заполни строку название -> Нажми на сохранить",
+        "1) Установи приложение VPN (файл .dmg будет отправлен ниже).",
+        "   Открой .dmg → перетащи приложение в папку Applications.",
+        "",
+        "   Важно: при первом запуске macOS покажет предупреждение безопасности.",
+        "   Зайди в Системные настройки → Конфиденциальность и безопасность → нажми 'Всё равно открыть'.",
+        "",
+        "2) Открой приложение → нажми 'Добавить профиль' → вставь ссылку:",
         inline_code(vless_link),
         "",
-        "Для включения VPN в области \"Настройка сети\" выбери \"Режим TUN\" и нажми на переключатель под кнопкой \"Режим TUN\", чтобы VPN включился.",
+        "3) Нажми 'Подключиться' — готово.",
     ]
 
     return "\n".join(lines)
@@ -663,35 +687,22 @@ def _android_message(*, cfg: BotConfig, email: str, vless_link: str, client_id: 
 
 
 def _ios_message(*, cfg: BotConfig, email: str, vless_link: str, client_id: str, sub_id: str) -> str:
-    karing, has_sub = _ios_karing_link(
-        cfg=cfg, email=email, vless_link=vless_link, client_id=client_id, sub_id=sub_id
-    )
-
     def inline_code(s: str) -> str:
-        # Telegram Markdown (legacy): inline code works reliably and is easy to copy.
         return "`" + (s or "").strip() + "`"
 
-    # Keep it minimal and copy-friendly (no duplication).
     lines = [
-        "iOS (Karing) подключение готово.",
+        "iOS — подключение готово.",
         "",
-        "1) Установи Karing: https://apps.apple.com/app/karing/id6472431552",
+        "1) Установи приложение VPN (файл .ipa будет отправлен ниже).",
         "",
-    ]
-
-    if has_sub and karing:
-        lines += [
-            "2) Авто-импорт (если поддерживается на устройстве):",
-            inline_code(karing),
-            "",
-        ]
-        step3 = 3
-    else:
-        step3 = 2
-
-    lines += [
-        f"{step3}) Кликни на ссылку -> открой Karing -> Добавить профиль -> Импорт из буфера обмена -> Не забудь заполнить примечание (например VPN) -> Нажми на галочку",
+        "Как установить .ipa на iPhone:",
+        "   a) Через AltStore: открой AltStore на iPhone → My Apps → '+' → выбери .ipa файл",
+        "   б) Через Sideloadly: подключи iPhone к ПК/Mac, открой Sideloadly, перетащи .ipa и нажми Start",
+        "",
+        "2) После установки открой приложение → нажми 'Добавить профиль' → вставь ссылку:",
         inline_code(vless_link),
+        "",
+        "3) Нажми 'Подключиться' — готово.",
     ]
 
     return "\n".join(lines)
@@ -1126,20 +1137,6 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         return
 
-    # Windows auto-import via Clash deep-link requires a Clash subscription/config URL template.
-    if requested_os == "windows" and not (cfg.xui_clash_sub_url_template or "").strip():
-        await q.edit_message_text(
-            "\n".join(
-                [
-                    "Ошибка при подтверждении: автоимпорт для Windows не настроен.",
-                    "Установите XUI_CLASH_SUB_URL_TEMPLATE в переменных окружения бота (HTTP(S) URL для Clash конфигурации/подписки).",
-                    "Пример: XUI_CLASH_SUB_URL_TEMPLATE=http://{server}:2096/sub/{sub_id}?type=clash",
-                    "Заполнители: {email}, {uuid}, {client_id}, {sub_id}, {subid}, {server}, {port}",
-                ]
-            )
-        )
-        return
-
     try:
         lock_f = await asyncio.wait_for(
             asyncio.to_thread(_lock_path, cfg.lock_file),
@@ -1215,7 +1212,7 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if not sub_id:
             sub_id = db_sub or ""
 
-    if not vless and requested_os != "windows":
+    if not vless:
         # Include stderr snippet for debugging.
         snippet = (err or out or "").strip().replace("\r", "")
         snippet = snippet[-700:] if snippet else ""
@@ -1227,39 +1224,33 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 pass
         return
 
-    if requested_os == "windows" and not client_id:
-        snippet = (err or out or "").strip().replace("\r", "")
-        snippet = snippet[-700:] if snippet else ""
-        await q.edit_message_text(f"Подтверждено, но ошибка: {display} ({user_id}) rc={rc}\n{snippet}")
-        if chat_id:
-            try:
-                await context.bot.send_message(chat_id=chat_id, text="Подтверждено, но произошла ошибка при генерации профиля для Windows. Обратитесь к администратору.")
-            except Exception:
-                pass
-        return
-
     await q.edit_message_text(f"Подтверждено: {display} {username} ({user_id}) client={client_id}")
     if chat_id:
-        # Send the message about our simplified app with three buttons
-        delivery_text = _get_simple_vpn_app_message(requested_os, vless)
+        # Build platform-specific message and keyboard
+        delivery_text = ""
         delivery_keyboard = None
-        
-        # Prepare keyboard based on OS
+
         if requested_os == "ios":
-            delivery_link, _has_sub = _ios_karing_link(
+            delivery_text = _ios_message(
                 cfg=cfg, email=email, vless_link=vless, client_id=client_id, sub_id=sub_id
             )
-            delivery_keyboard = _ios_keyboard(karing_link=delivery_link)
-        elif requested_os == "windows":
-            delivery_link, clash_sub_url, clash_auto_url = _windows_clash_link(
-                cfg=cfg, email=email, client_id=client_id, sub_id=sub_id
-            )
-            delivery_keyboard = _windows_keyboard(auto_url=clash_auto_url, sub_url=clash_sub_url)
+            delivery_keyboard = _ios_keyboard(karing_link="")
         elif requested_os == "android":
+            delivery_text = _android_message(
+                cfg=cfg, email=email, vless_link=vless, client_id=client_id, sub_id=sub_id
+            )
             _h_link, _sub_url, android_auto_url = _android_links(
                 cfg=cfg, email=email, client_id=client_id, sub_id=sub_id
             )
             delivery_keyboard = _android_keyboard(auto_url=android_auto_url)
+        elif requested_os == "windows":
+            clash_link, clash_sub_url, clash_auto_url = _windows_clash_link(
+                cfg=cfg, email=email, client_id=client_id, sub_id=sub_id
+            )
+            delivery_text = _windows_message(clash_link=clash_link, vless_link=vless)
+            delivery_keyboard = _windows_keyboard(auto_url=clash_auto_url, sub_url=clash_sub_url)
+        elif requested_os == "macos":
+            delivery_text = _macos_message(vless_link=vless)
         
         parse_mode = "Markdown"
 
