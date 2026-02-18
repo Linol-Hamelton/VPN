@@ -24,10 +24,3 @@ class StatsEntity with _$StatsEntity {
         connections: 0,
       );
 }
-        connections: 0,
-      );
-}
-        connections: 0,
-      );
-}
-

@@ -33,6 +33,3 @@ class StatsRepositoryImpl
         .handleExceptions(StatsUnexpectedFailure.new);
   }
 }
-}
-}
-
