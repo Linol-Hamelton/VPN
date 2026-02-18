@@ -269,6 +269,7 @@ class BotConfig:
     xui_clash_bridge_url_template: str
     xui_hiddify_bridge_url_template: str
     send_client_pack: bool
+    package_map_file: str
 
 
 def _load_config() -> BotConfig:
@@ -297,6 +298,7 @@ def _load_config() -> BotConfig:
         "http://{server}:25501/h-open?sub={sub_url_enc}&name=VPN-{email}",
     ).strip()
     send_client_pack = (os.getenv("BOT_SEND_CLIENT_PACK", "0").strip().lower() in ("1", "true", "yes", "y", "on"))
+    package_map_file = os.getenv("BOT_PACKAGE_FILE_MAP", "/var/lib/vpn-onboard/package_files.json").strip()
     return BotConfig(
         token=token,
         admin_ids=admins,
@@ -314,6 +316,7 @@ def _load_config() -> BotConfig:
         xui_clash_bridge_url_template=clash_bridge_url_template,
         xui_hiddify_bridge_url_template=hiddify_bridge_url_template,
         send_client_pack=send_client_pack,
+        package_map_file=package_map_file,
     )
 
 
@@ -755,6 +758,46 @@ def _pending_save(path: str, data: Dict[str, Any]) -> None:
     p.write_text(json.dumps(data, ensure_ascii=True, indent=2), encoding="utf-8")
 
 
+def _normalize_platform(name: str) -> str:
+    s = (name or "").strip().lower()
+    mapping = {
+        "ios": "ios",
+        "iphone": "ios",
+        "ipad": "ios",
+        "android": "android",
+        "win": "windows",
+        "windows": "windows",
+        "mac": "macos",
+        "macos": "macos",
+        "osx": "macos",
+        "linux": "linux",
+    }
+    return mapping.get(s, "")
+
+
+def _package_load(path: str) -> Dict[str, Any]:
+    p = Path(path)
+    if not p.exists():
+        return {}
+    try:
+        data = json.loads(p.read_text(encoding="utf-8", errors="ignore") or "{}")
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _package_save(path: str, data: Dict[str, Any]) -> None:
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data, ensure_ascii=True, indent=2), encoding="utf-8")
+
+
+def _package_get(path: str, platform: str) -> Optional[Dict[str, Any]]:
+    store = _package_load(path)
+    rec = store.get(platform)
+    return rec if isinstance(rec, dict) else None
+
+
 def _new_request_id() -> str:
     return uuid.uuid4().hex[:12]
 
@@ -794,6 +837,92 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         ]
     )
     await update.message.reply_text("Нажмите 'Начать', чтобы выбрать платформу для вашего устройства:", reply_markup=kb)
+
+
+async def cmd_setpkg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    cfg: BotConfig = context.bot_data["cfg"]
+    msg = update.message
+    if not msg:
+        return
+    user_id = msg.from_user.id if msg.from_user else 0
+    if not _is_admin(cfg, user_id):
+        await msg.reply_text("Admin only.")
+        return
+
+    if not context.args:
+        await msg.reply_text("Usage: reply to a document with /setpkg <ios|android|windows|macos|linux>")
+        return
+
+    platform = _normalize_platform(context.args[0])
+    if not platform:
+        await msg.reply_text("Unknown platform. Use: ios, android, windows, macos, linux.")
+        return
+
+    if not msg.reply_to_message or not msg.reply_to_message.document:
+        await msg.reply_text("Reply to a document with /setpkg <platform>.")
+        return
+
+    doc = msg.reply_to_message.document
+    store = _package_load(cfg.package_map_file)
+    store[platform] = {
+        "file_id": doc.file_id,
+        "file_name": doc.file_name or "",
+        "mime_type": doc.mime_type or "",
+        "updated_ts": int(time.time()),
+    }
+    _package_save(cfg.package_map_file, store)
+    await msg.reply_text(f"Package saved for {platform}: {doc.file_name or doc.file_id}")
+
+
+async def cmd_getpkg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    cfg: BotConfig = context.bot_data["cfg"]
+    msg = update.message
+    if not msg:
+        return
+    user_id = msg.from_user.id if msg.from_user else 0
+    if not _is_admin(cfg, user_id):
+        await msg.reply_text("Admin only.")
+        return
+
+    store = _package_load(cfg.package_map_file)
+    if not store:
+        await msg.reply_text("No packages configured.")
+        return
+
+    lines = ["Configured packages:"]
+    for platform in sorted(store.keys()):
+        rec = store.get(platform) or {}
+        name = rec.get("file_name") or rec.get("file_id") or "-"
+        lines.append(f"- {platform}: {name}")
+    await msg.reply_text("\n".join(lines))
+
+
+async def cmd_delpkg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    cfg: BotConfig = context.bot_data["cfg"]
+    msg = update.message
+    if not msg:
+        return
+    user_id = msg.from_user.id if msg.from_user else 0
+    if not _is_admin(cfg, user_id):
+        await msg.reply_text("Admin only.")
+        return
+
+    if not context.args:
+        await msg.reply_text("Usage: /delpkg <ios|android|windows|macos|linux>")
+        return
+
+    platform = _normalize_platform(context.args[0])
+    if not platform:
+        await msg.reply_text("Unknown platform. Use: ios, android, windows, macos, linux.")
+        return
+
+    store = _package_load(cfg.package_map_file)
+    if platform in store:
+        store.pop(platform, None)
+        _package_save(cfg.package_map_file, store)
+        await msg.reply_text(f"Package removed for {platform}.")
+    else:
+        await msg.reply_text(f"No package configured for {platform}.")
 
 
 async def cmd_choose_platform(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1168,6 +1297,24 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             except Exception:
                 pass
 
+        pkg = _package_get(cfg.package_map_file, requested_os)
+        if pkg:
+            try:
+                await context.bot.send_document(
+                    chat_id=chat_id,
+                    document=str(pkg.get("file_id") or ""),
+                    filename=(pkg.get("file_name") or None),
+                )
+            except Exception as e:
+                try:
+                    await context.bot.send_message(
+                        chat_id=admin_id,
+                        text=f"Package send failed ({requested_os}): {e}",
+                        disable_web_page_preview=True,
+                    )
+                except Exception:
+                    pass
+
         if cfg.send_client_pack and out_file.exists():
             try:
                 await context.bot.send_document(chat_id=chat_id, document=out_file.read_bytes(), filename=out_file.name)
@@ -1208,6 +1355,9 @@ def main() -> None:
 
     # Register handlers for the new simplified workflow
     app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("setpkg", cmd_setpkg))
+    app.add_handler(CommandHandler("getpkg", cmd_getpkg))
+    app.add_handler(CommandHandler("delpkg", cmd_delpkg))
     app.add_handler(CallbackQueryHandler(cmd_choose_platform_callback, pattern=r"^choose_platform"))
     app.add_handler(CallbackQueryHandler(cb_choose_os, pattern=r"^os:"))
     app.add_handler(CallbackQueryHandler(cb_admin_action, pattern=r"^adm:"))
