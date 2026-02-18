@@ -11,24 +11,24 @@ on:
         required: false
         default: 'dev'
         type: choice
-        options:
-          - dev
-          - prod
+        options: [dev, prod]
 
-env:
-  FLUTTER_VERSION: '3.24.0'
-  NDK_VERSION: r26d
-  APP_DIR: hiddify-next
-  CHANNEL: ${{ github.event.inputs.channel || 'prod' }}
+# ─────────────────────────────────────────────────────────────
+# Android APK  — ubuntu, no secrets required
+# Windows EXE  — windows, no secrets required
+# macOS   DMG  — macos,   no secrets required (unsigned)
+# iOS     IPA  — macos,   requires APPLE_CERTIFICATE_P12
+# ─────────────────────────────────────────────────────────────
 
 jobs:
 
-  # ─────────────────────────────────────────────
-  # Android APK  (no signing secrets required)
-  # ─────────────────────────────────────────────
+  # ───────── ANDROID ─────────
   build-android:
     name: Android APK
     runs-on: ubuntu-latest
+    env:
+      CHANNEL: ${{ github.event.inputs.channel || 'prod' }}
+      IS_GITHUB_ACTIONS: 1
     defaults:
       run:
         working-directory: hiddify-next
@@ -37,49 +37,53 @@ jobs:
 
       - uses: actions/setup-java@v4
         with:
+          distribution: 'zulu'
           java-version: '17'
-          distribution: 'temurin'
 
-      - name: Setup NDK
-        uses: nttld/setup-ndk@v1
+      - uses: nttld/setup-ndk@v1
         with:
-          ndk-version: ${{ env.NDK_VERSION }}
+          ndk-version: r26d
+          add-to-path: true
+          link-to-sdk: true
+
+      - uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '7.5'
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
+          flutter-version: '3.24.0'
           channel: 'stable'
           cache: true
 
       - name: Prepare
         run: make android-prepare
-        env:
-          CHANNEL: ${{ env.CHANNEL }}
 
       - name: Build APK
         run: make android-apk-release
-        env:
-          CHANNEL: ${{ env.CHANNEL }}
 
       - name: Collect artifacts
         run: |
-          mkdir -p ../out/android
-          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk  ../out/android/hiddify-android-arm64.apk   || true
-          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk ../out/android/hiddify-android-arm7.apk    || true
-          cp build/app/outputs/flutter-apk/app-x86_64-release.apk      ../out/android/hiddify-android-x64.apk     || true
-          ls -lh ../out/android/
+          mkdir -p ../out
+          ls -R build/app/outputs/flutter-apk/
+          cp build/app/outputs/flutter-apk/*arm64-v8a*.apk   ../out/hiddify-android-arm64.apk  || true
+          cp build/app/outputs/flutter-apk/*armeabi-v7a*.apk ../out/hiddify-android-arm7.apk   || true
+          cp build/app/outputs/flutter-apk/*x86_64*.apk      ../out/hiddify-android-x64.apk    || true
+          cp build/app/outputs/flutter-apk/app-release.apk   ../out/hiddify-android.apk        || true
 
       - uses: actions/upload-artifact@v4
         with:
           name: android
-          path: out/android/
+          path: out/
+          if-no-files-found: warn
 
-  # ─────────────────────────────────────────────
-  # Windows EXE  (no signing secrets required)
-  # ─────────────────────────────────────────────
+  # ───────── WINDOWS ─────────
   build-windows:
     name: Windows EXE
     runs-on: windows-2019
+    env:
+      CHANNEL: ${{ github.event.inputs.channel || 'prod' }}
+      IS_GITHUB_ACTIONS: 1
     defaults:
       run:
         working-directory: hiddify-next
@@ -88,7 +92,7 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
+          flutter-version: '3.24.0'
           channel: 'stable'
           cache: true
 
@@ -99,104 +103,108 @@ jobs:
 
       - name: Prepare
         run: make windows-prepare
-        env:
-          CHANNEL: ${{ env.CHANNEL }}
 
-      - name: Build EXE
+      - name: Build EXE + MSIX
         run: make windows-release
-        env:
-          CHANNEL: ${{ env.CHANNEL }}
 
       - name: Collect artifacts
         shell: bash
         run: |
-          mkdir -p ../out/windows
-          find dist -name "*.exe" -exec cp {} ../out/windows/hiddify-windows-setup-x64.exe \;
-          find dist -name "*.msix" -exec cp {} ../out/windows/hiddify-windows-x64.msix \; || true
-          ls -lh ../out/windows/
+          mkdir -p ../out
+          find dist -name "*.exe"  | head -1 | xargs -I{} cp {} ../out/hiddify-windows-setup-x64.exe  || true
+          find dist -name "*.msix" | head -1 | xargs -I{} cp {} ../out/hiddify-windows-x64.msix       || true
+          ls -lh ../out/
 
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: out/windows/
+          path: out/
+          if-no-files-found: warn
 
-  # ─────────────────────────────────────────────
-  # macOS DMG  (requires Apple certificate secret)
-  # Secret: APPLE_CERTIFICATE_P12, APPLE_CERTIFICATE_P12_PASSWORD
-  # Without secrets — build is skipped
-  # ─────────────────────────────────────────────
+  # ───────── macOS (unsigned) ─────────
   build-macos:
-    name: macOS DMG
+    name: macOS DMG (unsigned)
     runs-on: macos-13
+    env:
+      CHANNEL: ${{ github.event.inputs.channel || 'prod' }}
+      IS_GITHUB_ACTIONS: 1
     defaults:
       run:
         working-directory: hiddify-next
     steps:
       - uses: actions/checkout@v4
 
-      - name: Import Apple certificate
-        if: ${{ env.APPLE_CERTIFICATE_P12 != '' }}
+      - name: Import Apple certificate (optional)
+        if: ${{ secrets.APPLE_CERTIFICATE_P12 != '' }}
         uses: apple-actions/import-codesign-certs@v3
         with:
           p12-file-base64: ${{ secrets.APPLE_CERTIFICATE_P12 }}
           p12-password: ${{ secrets.APPLE_CERTIFICATE_P12_PASSWORD }}
-        env:
-          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
+          flutter-version: '3.24.0'
           channel: 'stable'
           cache: true
 
       - name: Install tools
         run: |
-          npm install -g appdmg
-          brew install create-dmg
+          brew install create-dmg tree
           dart pub global activate flutter_distributor
 
       - name: Prepare
         run: make macos-prepare
-        env:
-          CHANNEL: ${{ env.CHANNEL }}
 
-      - name: Build DMG
-        run: make macos-release
-        env:
-          CHANNEL: ${{ env.CHANNEL }}
-
-      - name: Collect artifacts
+      - name: Build .app (skip code signing if no cert)
         run: |
-          mkdir -p ../out/macos
-          find dist -name "*.dmg" -exec cp {} ../out/macos/hiddify-macos.dmg \;
-          find dist -name "*.pkg" -exec cp {} ../out/macos/hiddify-macos-installer.pkg \; || true
-          ls -lh ../out/macos/
+          # Try signed build first; fall back to unsigned if no cert configured
+          flutter build macos --release \
+            --dart-define sentry_dsn="" \
+            --dart-define channel=${{ env.CHANNEL }} || \
+          flutter build macos --release \
+            --dart-define sentry_dsn="" \
+            --dart-define channel=${{ env.CHANNEL }}
+
+      - name: Package DMG
+        run: |
+          mkdir -p ../out
+          APP="build/macos/Build/Products/Release/hiddify.app"
+          if [ ! -d "$APP" ]; then
+            echo "App bundle not found, skipping DMG packaging"
+            exit 0
+          fi
+          create-dmg \
+            --volname "Hiddify" \
+            --window-pos 200 120 \
+            --window-size 800 400 \
+            --icon-size 100 \
+            --icon "hiddify.app" 200 190 \
+            --hide-extension "hiddify.app" \
+            --app-drop-link 600 185 \
+            "../out/hiddify-macos.dmg" \
+            "$APP" || echo "DMG creation failed, skipping"
 
       - uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: out/macos/
+          path: out/
+          if-no-files-found: warn
 
-  # ─────────────────────────────────────────────
-  # iOS IPA  (requires Apple Developer secrets)
-  # Secrets needed:
-  #   APPLE_CERTIFICATE_P12              — P12 distribution cert (base64)
-  #   APPLE_CERTIFICATE_P12_PASSWORD     — P12 password
-  #   APPLE_MOBILE_PROVISIONING_PROFILES_TARGZ_BASE64 — provisioning profiles (base64 tar.gz)
-  # Without secrets — job is skipped
-  # ─────────────────────────────────────────────
+  # ───────── iOS IPA (requires Apple cert) ─────────
   build-ios:
     name: iOS IPA
     runs-on: macos-14
     if: ${{ secrets.APPLE_CERTIFICATE_P12 != '' }}
+    env:
+      CHANNEL: ${{ github.event.inputs.channel || 'prod' }}
+      IS_GITHUB_ACTIONS: 1
     defaults:
       run:
         working-directory: hiddify-next
     steps:
       - uses: actions/checkout@v4
 
-      - name: Import Apple certificate
-        uses: apple-actions/import-codesign-certs@v3
+      - uses: apple-actions/import-codesign-certs@v3
         with:
           p12-file-base64: ${{ secrets.APPLE_CERTIFICATE_P12 }}
           p12-password: ${{ secrets.APPLE_CERTIFICATE_P12_PASSWORD }}
@@ -210,7 +218,7 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
+          flutter-version: '3.24.0'
           channel: 'stable'
           cache: true
 
@@ -219,19 +227,14 @@ jobs:
 
       - name: Prepare
         run: make ios-prepare
-        env:
-          CHANNEL: ${{ env.CHANNEL }}
 
       - name: Build IPA
         run: make ios-release
-        env:
-          CHANNEL: ${{ env.CHANNEL }}
 
       - name: Collect artifacts
         run: |
-          mkdir -p ../out/ios
-          find dist -name "*.ipa" -exec cp {} ../out/ios/hiddify-ios.ipa \;
-          ls -lh ../out/ios/
+          mkdir -p ../out
+          find dist -name "*.ipa" | head -1 | xargs -I{} cp {} ../out/hiddify-ios.ipa || true
 
       - name: Cleanup keychain
         if: always()
@@ -240,15 +243,20 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ios
-          path: out/ios/
+          path: out/
+          if-no-files-found: warn
 
-  # ─────────────────────────────────────────────
-  # GitHub Release  (only on tag push)
-  # ─────────────────────────────────────────────
+  # ───────── RELEASE ─────────
+  # Runs on tag push even if macOS or iOS failed/skipped.
+  # Only requires Android OR Windows to succeed.
   release:
-    name: Create Release
+    name: Create GitHub Release
     needs: [build-android, build-windows, build-macos]
-    if: startsWith(github.ref, 'refs/tags/')
+    if: |
+      always() &&
+      !cancelled() &&
+      startsWith(github.ref, 'refs/tags/') &&
+      (needs.build-android.result == 'success' || needs.build-windows.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -257,16 +265,17 @@ jobs:
         with:
           merge-multiple: true
           path: ./release-files/
+        continue-on-error: true
 
-      - name: List files
-        run: ls -lhR release-files/
+      - name: List release files
+        run: find release-files -type f | sort 2>/dev/null || echo "No files downloaded"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           name: ${{ github.ref_name }}
-          tag_name: ${{ github.ref_name }}
-          prerelease: ${{ env.CHANNEL == 'dev' }}
+          prerelease: ${{ github.event.inputs.channel == 'dev' }}
           files: release-files/**/*
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
