@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:hiddify/features/per_app_proxy/model/installed_package_info.dart';
 import 'package:hiddify/features/per_app_proxy/data/per_app_proxy_repository.dart';
 import 'package:hiddify/features/per_app_proxy/data/desktop_per_app_proxy_repository.dart';

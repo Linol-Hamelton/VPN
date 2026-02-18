@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:fpdart/fpdart.dart';
 import 'package:hiddify/features/per_app_proxy/data/desktop_per_app_proxy_repository.dart';
@@ -33,7 +34,7 @@ class UnifiedPerAppProxyRepositoryImpl
   final DesktopRoutingController _desktopRoutingController;
 
   UnifiedPerAppProxyRepositoryImpl(
-    this._androidRepo, 
+    this._androidRepo,
     this._desktopRepo,
     this._desktopRoutingController,
   );
@@ -44,17 +45,16 @@ class UnifiedPerAppProxyRepositoryImpl
       () async {
         loggy.debug("Getting all installed applications");
         if (Platform.isAndroid) {
-          return _androidRepo.getInstalledPackages();
+          return _androidRepo.getInstalledPackages().run();
         } else if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
-          return _desktopRepo.getInstalledApplications();
+          return _desktopRepo.getInstalledApplications().run();
         } else {
           return left("Unsupported platform");
         }
       },
-    ).flatMap((apps) async {
-      // Sort applications by name for consistent UI presentation
+    ).flatMap((apps) {
       apps.sort((a, b) => a.name.compareTo(b.name));
-      return right(apps);
+      return TaskEither.right(apps);
     });
   }
 
@@ -64,9 +64,9 @@ class UnifiedPerAppProxyRepositoryImpl
       () async {
         loggy.debug("Getting application icon for: $appId");
         if (Platform.isAndroid) {
-          return _androidRepo.getPackageIcon(appId);
+          return _androidRepo.getPackageIcon(appId).run();
         } else if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
-          return _desktopRepo.getApplicationIcon(appId);
+          return _desktopRepo.getApplicationIcon(appId).run();
         } else {
           return left("Unsupported platform");
         }
@@ -79,13 +79,13 @@ class UnifiedPerAppProxyRepositoryImpl
     return TaskEither(
       () async {
         loggy.debug("Applying routing rules for ${appIds.length} apps in ${includeMode ? 'include' : 'exclude'} mode");
-        
+
         if (Platform.isAndroid) {
           // On Android, we use the existing Android VPN service functionality
-          return _applyAndroidRoutingRules(appIds, includeMode);
+          return _applyAndroidRoutingRules(appIds, includeMode).run();
         } else if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
           // On desktop platforms, use the desktop routing controller
-          return _desktopRoutingController.setupAppRouting(appIds, includeMode);
+          return _desktopRoutingController.setupAppRouting(appIds, includeMode).run();
         } else {
           return left("Unsupported platform for routing rules");
         }
@@ -101,9 +101,9 @@ class UnifiedPerAppProxyRepositoryImpl
     try {
       // The actual implementation would involve calling the Android native layer
       // We'd need to update SharedPreferences with the app list and trigger VPN restart
-      return right(unit);
+      return TaskEither.right(unit);
     } catch (e) {
-      return left("Error applying Android routing rules: $e");
+      return TaskEither.left("Error applying Android routing rules: $e");
     }
   }
 
@@ -112,14 +112,14 @@ class UnifiedPerAppProxyRepositoryImpl
     return TaskEither(
       () async {
         loggy.debug("Checking if app $appId is routed through VPN");
-        
+
         if (Platform.isAndroid) {
           // This would check the existing Android VPN service routing status
           // For now, simulate
           return right(true);
         } else if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
           // Use the desktop routing controller to check status
-          return _desktopRoutingController.isAppRoutedThroughVPN(appId);
+          return _desktopRoutingController.isAppRoutedThroughVPN(appId).run();
         } else {
           return left("Unsupported platform for routing status check");
         }
@@ -132,14 +132,14 @@ class UnifiedPerAppProxyRepositoryImpl
     return TaskEither(
       () async {
         loggy.debug("Resetting all routing rules to default");
-        
+
         if (Platform.isAndroid) {
           // Reset Android VPN routing
           // In practice, this would involve clearing preferences and restarting the VPN
           return right(unit);
         } else if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
           // Use the desktop routing controller to reset routing
-          return _desktopRoutingController.resetRouting();
+          return _desktopRoutingController.resetRouting().run();
         } else {
           return left("Unsupported platform for routing reset");
         }
@@ -147,4 +147,3 @@ class UnifiedPerAppProxyRepositoryImpl
     );
   }
 }
-
