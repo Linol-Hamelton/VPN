@@ -6,8 +6,8 @@ import com.hiddify.hiddify.constant.Status
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
-import io.nekohasekai.libbox.Libbox
-import io.nekohasekai.mobile.Mobile
+import com.hiddify.core.libbox.Libbox
+import com.hiddify.core.mobile.Mobile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
