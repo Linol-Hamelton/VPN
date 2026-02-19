@@ -23,11 +23,11 @@ class DesktopPerAppProxyRepositoryImpl
         loggy.debug("getting installed applications info");
         
         if (Platform.isWindows) {
-          return _getWindowsApplications();
+          return _getWindowsApplications().run();
         } else if (Platform.isMacOS) {
-          return _getMacOSApplications();
+          return _getMacOSApplications().run();
         } else if (Platform.isLinux) {
-          return _getLinuxApplications();
+          return _getLinuxApplications().run();
         } else {
           return left("Unsupported platform");
         }
@@ -42,11 +42,11 @@ class DesktopPerAppProxyRepositoryImpl
         loggy.debug("getting application [$appId] icon");
         
         if (Platform.isWindows) {
-          return _getWindowsApplicationIcon(appId);
+          return _getWindowsApplicationIcon(appId).run();
         } else if (Platform.isMacOS) {
-          return _getMacOSApplicationIcon(appId);
+          return _getMacOSApplicationIcon(appId).run();
         } else if (Platform.isLinux) {
-          return _getLinuxApplicationIcon(appId);
+          return _getLinuxApplicationIcon(appId).run();
         } else {
           return left("Unsupported platform");
         }

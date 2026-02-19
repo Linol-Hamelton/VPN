@@ -146,10 +146,10 @@ class SimpleHomePage extends HookConsumerWidget {
                               builder: (context, ref, child) {
                                 final connectionStatus = ref.watch(connectionNotifierProvider);
                                 final icon = switch (connectionStatus) {
-                                  AsyncData(value: Connected()) => FluentIcons.disconnect_24_filled,
-                                  AsyncData(value: Disconnected()) || AsyncError() => FluentIcons.connect_24_filled,
-                                  AsyncData(value: Connecting()) => FluentIcons.progress_24_filled,
-                                  _ => FluentIcons.disconnect_24_filled,
+                                  AsyncData(value: Connected()) => Icons.power_off,
+                                  AsyncData(value: Disconnected()) || AsyncError() => Icons.power,
+                                  AsyncData(value: Connecting()) => Icons.sync,
+                                  _ => Icons.power_off,
                                 };
                                 return Icon(icon);
                               },
@@ -313,7 +313,7 @@ class SimpleHomePage extends HookConsumerWidget {
           value: 'stats',
           child: Row(
             children: [
-              const Icon(FluentIcons.graph_24_filled),
+              const Icon(FluentIcons.data_bar_vertical_24_filled),
               const Gap(8),
               Text('Statistics'),
             ],

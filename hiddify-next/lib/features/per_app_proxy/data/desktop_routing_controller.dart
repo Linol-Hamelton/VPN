@@ -24,11 +24,11 @@ class DesktopRoutingControllerImpl
         loggy.debug("Setting up app routing for ${appIds.length} apps in ${includeMode ? 'include' : 'exclude'} mode");
         
         if (Platform.isWindows) {
-          return _setupWindowsAppRouting(appIds, includeMode);
+          return _setupWindowsAppRouting(appIds, includeMode).run();
         } else if (Platform.isMacOS) {
-          return _setupMacOSAppRouting(appIds, includeMode);
+          return _setupMacOSAppRouting(appIds, includeMode).run();
         } else if (Platform.isLinux) {
-          return _setupLinuxAppRouting(appIds, includeMode);
+          return _setupLinuxAppRouting(appIds, includeMode).run();
         } else {
           return left("Unsupported platform for routing");
         }
@@ -43,11 +43,11 @@ class DesktopRoutingControllerImpl
         loggy.debug("Resetting routing configuration");
         
         if (Platform.isWindows) {
-          return _resetWindowsRouting();
+          return _resetWindowsRouting().run();
         } else if (Platform.isMacOS) {
-          return _resetMacOSRouting();
+          return _resetMacOSRouting().run();
         } else if (Platform.isLinux) {
-          return _resetLinuxRouting();
+          return _resetLinuxRouting().run();
         } else {
           return left("Unsupported platform for routing reset");
         }
