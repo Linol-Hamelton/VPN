@@ -42,7 +42,7 @@ class PerAppProxyPage extends HookConsumerWidget with PresLogger {
     };
 
     // Categorize apps (basic categorization based on name)
-    final categorizedPackages = useMemoized(() {
+    final categorizedPackages = useMemoized<AsyncValue<List<InstalledPackageInfo>>>(() {
       if (!asyncPackages.hasValue) return const AsyncData([]);
       
       final packages = asyncPackages.requireValue;
