@@ -205,12 +205,4 @@ class VPNService : VpnService(), PlatformInterfaceWrapper {
 
     override fun writeLog(message: String) = service.writeLog(message)
 
-}        val pfd =
-            builder.establish() ?: error("android: the application is not prepared or is revoked")
-        service.fileDescriptor = pfd
-        return pfd.fd
-    }
-
-    override fun writeLog(message: String) = service.writeLog(message)
-
 }
