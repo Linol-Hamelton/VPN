@@ -1226,8 +1226,21 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if chat_id:
         # Build platform-specific message and keyboard
         delivery_text = _get_simple_vpn_app_message(requested_os, vless)
-        delivery_keyboard = None
         delivery_link = ""
+
+        # One-click button: HTTP bridge → hiddify://import/... (requires XUI_SUB_URL_TEMPLATE)
+        sub_url = _render_sub_url(cfg=cfg, email=email, client_id=client_id, sub_id=sub_id)
+        hiddify_btn_url = _render_hiddify_bridge_url(
+            cfg=cfg, email=email, client_id=client_id, sub_id=sub_id,
+            sub_url=sub_url,
+            hiddify_link=_hiddify_import_link(url=sub_url or vless, name=f"VPN-{email}"),
+        )
+        if hiddify_btn_url:
+            delivery_link = hiddify_btn_url
+        delivery_keyboard = (
+            InlineKeyboardMarkup([[InlineKeyboardButton("Подключить в 1 клик", url=hiddify_btn_url)]])
+            if hiddify_btn_url else None
+        )
         
         parse_mode = "Markdown"
 
