@@ -724,32 +724,25 @@ def _get_download_links_for_platform(os_name: str) -> str:
 
 def _get_simple_vpn_app_message(os_name: str, vless_link: str) -> str:
     """Message for our simplified VPN client that has only 3 buttons: Add Profile, Start VPN, Settings"""
-    
-    download_link = _get_download_links_for_platform(os_name)
-    
+
     def inline_code(s: str) -> str:
         return "`" + (s or "").strip() + "`"
-        
+
     lines = [
         f"Ваш профиль VPN для {os_name.capitalize()} готов!",
         "",
-        "1) Скачайте упрощенное приложение для VPN:",
-        download_link,
+        "1) Установите приложение VPN (файл отправлен ниже в этом чате).",
         "",
-        "2) После установки откройте приложение и нажмите 'Добавить профиль'",
+        "2) После установки откройте приложение и нажмите 'Добавить профиль'.",
         "",
-        "3) Вы можете добавить профиль одним из способов:",
-        "   - Нажмите кнопку 'Добавить профиль' и вставьте эту ссылку:",
+        "3) Вставьте эту ссылку и нажмите 'Добавить':",
         inline_code(vless_link),
-        "   - Или отсканируйте QR-код с вашего компьютера (ссылка выше)",
         "",
-        "4) После добавления профиля нажмите 'Запустить VPN' для подключения",
+        "4) Нажмите 'Запустить VPN' для подключения.",
         "",
-        "5) Нажмите 'Настройки' чтобы изменить параметры или отключить VPN",
-        "",
-        "Приложение имеет простой интерфейс с только тремя кнопками для максимального удобства:"
+        "5) В разделе 'Настройки' можно изменить параметры или отключить VPN.",
     ]
-    
+
     return "\n".join(lines)
 
 
@@ -1227,31 +1220,9 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await q.edit_message_text(f"Подтверждено: {display} {username} ({user_id}) client={client_id}")
     if chat_id:
         # Build platform-specific message and keyboard
-        delivery_text = ""
+        delivery_text = _get_simple_vpn_app_message(requested_os, vless)
         delivery_keyboard = None
         delivery_link = ""
-
-        if requested_os == "ios":
-            delivery_text = _ios_message(
-                cfg=cfg, email=email, vless_link=vless, client_id=client_id, sub_id=sub_id
-            )
-            delivery_keyboard = _ios_keyboard(karing_link="")
-        elif requested_os == "android":
-            delivery_text = _android_message(
-                cfg=cfg, email=email, vless_link=vless, client_id=client_id, sub_id=sub_id
-            )
-            _h_link, _sub_url, android_auto_url = _android_links(
-                cfg=cfg, email=email, client_id=client_id, sub_id=sub_id
-            )
-            delivery_keyboard = _android_keyboard(auto_url=android_auto_url)
-        elif requested_os == "windows":
-            clash_link, clash_sub_url, clash_auto_url = _windows_clash_link(
-                cfg=cfg, email=email, client_id=client_id, sub_id=sub_id
-            )
-            delivery_text = _windows_message(clash_link=clash_link, vless_link=vless)
-            delivery_keyboard = _windows_keyboard(auto_url=clash_auto_url, sub_url=clash_sub_url)
-        elif requested_os == "macos":
-            delivery_text = _macos_message(vless_link=vless)
         
         parse_mode = "Markdown"
 
