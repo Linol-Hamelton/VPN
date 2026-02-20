@@ -1243,40 +1243,7 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         
         parse_mode = "Markdown"
 
-        try:
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=delivery_text,
-                reply_markup=delivery_keyboard,
-                disable_web_page_preview=True,
-                parse_mode=parse_mode,
-            )
-        except Exception as e:
-            # Some Telegram clients reject custom schemes in URL buttons.
-            try:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=delivery_text,
-                    disable_web_page_preview=True,
-                    parse_mode=None,
-                )
-            except Exception:
-                pass
-            try:
-                await context.bot.send_message(
-                    chat_id=admin_id,
-                    text="\n".join(
-                        [
-                            f"Предупреждение: невозможно отправить пользователю сообщение с кнопкой URL ({display} {username} {user_id}).",
-                            f"- ошибка: {e}",
-                            f"- deeplink: {delivery_link or '-'}",
-                        ]
-                    ),
-                    disable_web_page_preview=True,
-                )
-            except Exception:
-                pass
-
+        # 1. Файл с приложением
         pkg = _package_get(cfg.package_map_file, requested_os)
         if pkg:
             try:
@@ -1294,6 +1261,51 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     )
                 except Exception:
                     pass
+
+        # 2. Кнопка автоподключения
+        if delivery_keyboard:
+            try:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="Нажмите кнопку для автоподключения:",
+                    reply_markup=delivery_keyboard,
+                    disable_web_page_preview=True,
+                )
+            except Exception:
+                pass
+
+        # 3. Текстовая инструкция
+        try:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=delivery_text,
+                disable_web_page_preview=True,
+                parse_mode=parse_mode,
+            )
+        except Exception as e:
+            try:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=delivery_text,
+                    disable_web_page_preview=True,
+                    parse_mode=None,
+                )
+            except Exception:
+                pass
+            try:
+                await context.bot.send_message(
+                    chat_id=admin_id,
+                    text="\n".join(
+                        [
+                            f"Предупреждение: невозможно отправить инструкцию пользователю ({display} {username} {user_id}).",
+                            f"- ошибка: {e}",
+                            f"- deeplink: {delivery_link or '-'}",
+                        ]
+                    ),
+                    disable_web_page_preview=True,
+                )
+            except Exception:
+                pass
 
         if cfg.send_client_pack and out_file.exists():
             try:
