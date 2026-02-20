@@ -33,7 +33,7 @@ abstract class ConfigOptions {
   );
   static final useXrayCoreWhenPossible = PreferencesNotifier.create<bool, bool>(
     "use-xray-core-when-possible",
-    false,
+    true,
   );
   static final blockAds = PreferencesNotifier.create<bool, bool>(
     "block-ads",
@@ -48,7 +48,7 @@ abstract class ConfigOptions {
 
   static final resolveDestination = PreferencesNotifier.create<bool, bool>(
     "resolve-destination",
-    false,
+    true,
   );
 
   static final ipv6Mode = PreferencesNotifier.create<IPv6Mode, String>(
@@ -60,7 +60,7 @@ abstract class ConfigOptions {
 
   static final remoteDnsAddress = PreferencesNotifier.create<String, String>(
     "remote-dns-address",
-    "udp://1.1.1.1",
+    "https://1.1.1.1/dns-query",
     possibleValues: List.of([
       "local",
       "udp://223.5.5.5",
@@ -84,7 +84,7 @@ abstract class ConfigOptions {
 
   static final directDnsAddress = PreferencesNotifier.create<String, String>(
     "direct-dns-address",
-    "udp://1.1.1.1",
+    "https://1.1.1.1/dns-query",
     possibleValues: List.of([
       "local",
       "udp://223.5.5.5",
@@ -96,7 +96,7 @@ abstract class ConfigOptions {
       "4.4.2.2",
       "8.8.8.8",
     ]),
-    defaultValueFunction: (ref) => ref.read(region) == Region.cn ? "223.5.5.5" : "1.1.1.1",
+    defaultValueFunction: (ref) => ref.read(region) == Region.cn ? "udp://223.5.5.5" : "https://1.1.1.1/dns-query",
     validator: (value) => value.isNotBlank,
   );
 
@@ -195,7 +195,7 @@ abstract class ConfigOptions {
 
   static final enableTlsFragment = PreferencesNotifier.create<bool, bool>(
     "enable-tls-fragment",
-    false,
+    true,
   );
 
   static final tlsFragmentSize = PreferencesNotifier.create<OptionalRange, String>(
@@ -214,7 +214,7 @@ abstract class ConfigOptions {
 
   static final enableTlsMixedSniCase = PreferencesNotifier.create<bool, bool>(
     "enable-tls-mixed-sni-case",
-    false,
+    true,
   );
 
   static final enableTlsPadding = PreferencesNotifier.create<bool, bool>(

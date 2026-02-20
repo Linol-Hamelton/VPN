@@ -66,13 +66,35 @@ class AddProfile extends _$AddProfile with AppLogger {
         final activeProfile = await ref.read(activeProfileProvider.future);
         final markAsActive = activeProfile == null || ref.read(Preferences.markNewProfileActive);
         final TaskEither<ProfileFailure, Unit> task;
-        if (LinkParser.parse(rawInput) case (final link)?) {
-          loggy.debug("adding profile, url: [${link.url}]");
-          task = _profilesRepo.addByUrl(
-            link.url,
-            markAsActive: markAsActive,
-            cancelToken: _cancelToken = CancelToken(),
-          );
+        final urlCandidates = LinkParser.parseCandidatesFromText(rawInput);
+        if (urlCandidates.isNotEmpty) {
+          ProfileFailure? firstError;
+          for (final link in urlCandidates) {
+            loggy.debug("adding profile, url candidate: [${link.url}]");
+            final result = await _profilesRepo
+                .addByUrl(
+                  link.url,
+                  markAsActive: markAsActive,
+                  cancelToken: _cancelToken = CancelToken(),
+                )
+                .run();
+
+            var success = false;
+            result.match(
+              (err) {
+                firstError ??= err;
+                loggy.warning("failed to add profile by candidate url", err);
+              },
+              (_) {
+                success = true;
+                loggy.info(
+                  "successfully added profile, mark as active? [$markAsActive]",
+                );
+              },
+            );
+            if (success) return unit;
+          }
+          throw (firstError ?? const ProfileInvalidUrlFailure());
         } else if (LinkParser.protocol(rawInput) case (final parsed)?) {
           loggy.debug("adding profile, content");
           var name = parsed.name;

@@ -33,6 +33,9 @@
 			<string>com.hiddify.ios</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
+				<string>clash</string>
+				<string>clashmeta</string>
+				<string>sing-box</string>
 				<string>hiddify</string>
 			</array>
 		</dict>
