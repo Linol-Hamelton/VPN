@@ -1229,6 +1229,7 @@ async def cb_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         # Build platform-specific message and keyboard
         delivery_text = ""
         delivery_keyboard = None
+        delivery_link = ""
 
         if requested_os == "ios":
             delivery_text = _ios_message(
